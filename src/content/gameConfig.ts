@@ -6,216 +6,73 @@ import type { SchnauzerGameConfig, SpriteSheetManifest } from './types';
 // ---------------------------------------------------------------------------
 // Sprite manifests
 //
-// All three source sheets are 1980x1080 with three labeled rows. The art is
-// not arranged on a tight uniform grid -- each row has labels, blank cells,
-// and slightly different column counts -- so we encode frames as explicit
-// (x, y, w, h) rectangles instead of relying on Phaser's spritesheet
-// (frameWidth/frameHeight) loader.
+// The runtime art is preprocessed into tight 48x48 cell strips by
+// `scripts/extract_sprite_strips.py` -- one strip per animation, frames
+// laid out horizontally with no gaps. Each strip is loaded as its own
+// `SpriteSheetManifest` whose `frames` map is just `frame_0..frame_N-1`
+// covering the strip end-to-end. This keeps the engine's runtime model
+// (named frames + named animations) unchanged while letting us author
+// animations as flat horizontal strips.
 //
-// These coordinates are FIRST-PASS ESTIMATES picked by eye from the source
-// sheets. Public/sprites/README.md documents the layout so an artist or a
-// future maintainer can refine the numbers without touching the engine.
-//
-// To tune a frame: open the sheet in any image editor, read the bounding
-// box of the desired sprite cell, and update the matching entry below.
+// To add or replace art:
+//   * Drop a new strip into `public/sprites/` (or regenerate from the
+//     design sheets with `python3 scripts/extract_sprite_strips.py`).
+//   * Update the matching strip(s) below to match the new frame count.
 // ---------------------------------------------------------------------------
 
-// Approximate row Y centers in the schnauzer sheet.
-const HERO_ROW_Y = { idle: 100, walk: 360, dash: 620 };
-const MINION_ROW_Y = { run: 110, stash: 380, boop: 650 };
-const MCNUTT_ROW_Y = { glide: 110, cackle: 380, swipe: 650 };
+const STRIP_CELL = 48;
 
-const HERO_FRAME = { w: 110, h: 130 };
-const MINION_FRAME = { w: 110, h: 130 };
-const MCNUTT_FRAME = { w: 110, h: 130 };
+/** Build a `SpriteSheetManifest` for a horizontal strip of `frameCount` cells. */
+function strip(
+  key: string,
+  url: string,
+  frameCount: number,
+  animationName: string,
+  frameRate: number,
+  repeat: number
+): SpriteSheetManifest {
+  const frames: SpriteSheetManifest['frames'] = {};
+  const frameKeys: string[] = [];
+  for (let i = 0; i < frameCount; i++) {
+    const name = `frame_${i}`;
+    frames[name] = { x: i * STRIP_CELL, y: 0, w: STRIP_CELL, h: STRIP_CELL };
+    frameKeys.push(name);
+  }
+  return {
+    key,
+    url,
+    frames,
+    animations: {
+      [animationName]: { frames: frameKeys, frameRate, repeat },
+    },
+    renderSize: { width: 32, height: 32 },
+    renderOffsetY: -4,
+  };
+}
 
-const schnauzerHeroSheet: SpriteSheetManifest = {
-  key: 'schnauzer-hero',
-  url: 'sprites/schnauzer-hero.png',
-  renderSize: { width: 36, height: 42 },
-  renderOffsetY: -4,
-  frames: {
-    // Row 1: idle poses (front / back / side).
-    idle_down_a: { x: 90, y: HERO_ROW_Y.idle, ...HERO_FRAME },
-    idle_down_b: { x: 220, y: HERO_ROW_Y.idle, ...HERO_FRAME },
-    idle_down_c: { x: 350, y: HERO_ROW_Y.idle, ...HERO_FRAME },
-    idle_up_a: { x: 760, y: HERO_ROW_Y.idle, ...HERO_FRAME },
-    idle_up_b: { x: 890, y: HERO_ROW_Y.idle, ...HERO_FRAME },
-    idle_up_c: { x: 1020, y: HERO_ROW_Y.idle, ...HERO_FRAME },
-    idle_side_a: { x: 1430, y: HERO_ROW_Y.idle, ...HERO_FRAME },
-    idle_side_b: { x: 1560, y: HERO_ROW_Y.idle, ...HERO_FRAME },
-    idle_side_c: { x: 1690, y: HERO_ROW_Y.idle, ...HERO_FRAME },
+const heroIdleDown = strip('hero_idle_down', 'sprites/hero_idle_down.png', 1, 'idle_down', 1, -1);
+const heroIdleUp = strip('hero_idle_up', 'sprites/hero_idle_up.png', 1, 'idle_up', 1, -1);
+const heroIdleSide = strip('hero_idle_side', 'sprites/hero_idle_side.png', 1, 'idle_side', 1, -1);
+const heroWalkDown = strip('hero_walk_down', 'sprites/hero_walk_down.png', 4, 'walk_down', 8, -1);
+const heroWalkUp = strip('hero_walk_up', 'sprites/hero_walk_up.png', 4, 'walk_up', 8, -1);
+const heroWalkSide = strip('hero_walk_side', 'sprites/hero_walk_side.png', 3, 'walk_side', 8, -1);
+const heroDash = strip('hero_dash', 'sprites/hero_dash.png', 1, 'dash', 1, 0);
 
-    // Row 2: walk cycles.
-    walk_down_a: { x: 90, y: HERO_ROW_Y.walk, ...HERO_FRAME },
-    walk_down_b: { x: 220, y: HERO_ROW_Y.walk, ...HERO_FRAME },
-    walk_down_c: { x: 350, y: HERO_ROW_Y.walk, ...HERO_FRAME },
-    walk_down_d: { x: 480, y: HERO_ROW_Y.walk, ...HERO_FRAME },
-    walk_up_a: { x: 760, y: HERO_ROW_Y.walk, ...HERO_FRAME },
-    walk_up_b: { x: 890, y: HERO_ROW_Y.walk, ...HERO_FRAME },
-    walk_up_c: { x: 1020, y: HERO_ROW_Y.walk, ...HERO_FRAME },
-    walk_up_d: { x: 1150, y: HERO_ROW_Y.walk, ...HERO_FRAME },
-    walk_side_a: { x: 1430, y: HERO_ROW_Y.walk, ...HERO_FRAME },
-    walk_side_b: { x: 1560, y: HERO_ROW_Y.walk, ...HERO_FRAME },
-    walk_side_c: { x: 1690, y: HERO_ROW_Y.walk, ...HERO_FRAME },
+const minionWalkUp = strip('minion_walk_up', 'sprites/minion_walk_up.png', 3, 'walk_up', 8, -1);
+const minionWalkDown = strip('minion_walk_down', 'sprites/minion_walk_down.png', 3, 'walk_down', 8, -1);
+const minionWalkSide = strip('minion_walk_side', 'sprites/minion_walk_side.png', 3, 'walk_side', 8, -1);
+const minionStashUp = strip('minion_stash_up', 'sprites/minion_stash_up.png', 4, 'stash_up', 6, -1);
+const minionStashDown = strip('minion_stash_down', 'sprites/minion_stash_down.png', 4, 'stash_down', 6, -1);
+const minionStashSide = strip('minion_stash_side', 'sprites/minion_stash_side.png', 3, 'stash_side', 6, -1);
+const minionBoop = strip('minion_boop', 'sprites/minion_boop.png', 4, 'boop', 10, 0);
 
-    // Row 3: flash dash.
-    dash_a: { x: 90, y: HERO_ROW_Y.dash, ...HERO_FRAME },
-  },
-  animations: {
-    idle_down: { frames: ['idle_down_a'], frameRate: 1, repeat: -1 },
-    idle_up: { frames: ['idle_up_a'], frameRate: 1, repeat: -1 },
-    idle_side: { frames: ['idle_side_a'], frameRate: 1, repeat: -1 },
-    walk_down: {
-      frames: ['walk_down_a', 'walk_down_b', 'walk_down_c', 'walk_down_d'],
-      frameRate: 8,
-      repeat: -1,
-    },
-    walk_up: {
-      frames: ['walk_up_a', 'walk_up_b', 'walk_up_c', 'walk_up_d'],
-      frameRate: 8,
-      repeat: -1,
-    },
-    walk_side: {
-      frames: ['walk_side_a', 'walk_side_b', 'walk_side_c'],
-      frameRate: 8,
-      repeat: -1,
-    },
-    dash: { frames: ['dash_a'], frameRate: 1, repeat: 0 },
-  },
-};
-
-const squirrelMinionSheet: SpriteSheetManifest = {
-  key: 'squirrel-minion',
-  url: 'sprites/squirrel-minion.png',
-  renderSize: { width: 28, height: 34 },
-  renderOffsetY: -2,
-  frames: {
-    // Row 1: run cycle (walk up / walk down / walk right).
-    run_up_a: { x: 90, y: MINION_ROW_Y.run, ...MINION_FRAME },
-    run_up_b: { x: 220, y: MINION_ROW_Y.run, ...MINION_FRAME },
-    run_up_c: { x: 350, y: MINION_ROW_Y.run, ...MINION_FRAME },
-    run_down_a: { x: 620, y: MINION_ROW_Y.run, ...MINION_FRAME },
-    run_down_b: { x: 750, y: MINION_ROW_Y.run, ...MINION_FRAME },
-    run_down_c: { x: 880, y: MINION_ROW_Y.run, ...MINION_FRAME },
-    run_side_a: { x: 1280, y: MINION_ROW_Y.run, ...MINION_FRAME },
-    run_side_b: { x: 1410, y: MINION_ROW_Y.run, ...MINION_FRAME },
-    run_side_c: { x: 1540, y: MINION_ROW_Y.run, ...MINION_FRAME },
-
-    // Row 2: stash carrying.
-    stash_up_a: { x: 90, y: MINION_ROW_Y.stash, ...MINION_FRAME },
-    stash_up_b: { x: 220, y: MINION_ROW_Y.stash, ...MINION_FRAME },
-    stash_up_c: { x: 350, y: MINION_ROW_Y.stash, ...MINION_FRAME },
-    stash_up_d: { x: 480, y: MINION_ROW_Y.stash, ...MINION_FRAME },
-    stash_down_a: { x: 620, y: MINION_ROW_Y.stash, ...MINION_FRAME },
-    stash_down_b: { x: 750, y: MINION_ROW_Y.stash, ...MINION_FRAME },
-    stash_down_c: { x: 880, y: MINION_ROW_Y.stash, ...MINION_FRAME },
-    stash_down_d: { x: 1010, y: MINION_ROW_Y.stash, ...MINION_FRAME },
-    stash_side_a: { x: 1280, y: MINION_ROW_Y.stash, ...MINION_FRAME },
-    stash_side_b: { x: 1410, y: MINION_ROW_Y.stash, ...MINION_FRAME },
-    stash_side_c: { x: 1540, y: MINION_ROW_Y.stash, ...MINION_FRAME },
-
-    // Row 3: boop reaction.
-    boop_a: { x: 90, y: MINION_ROW_Y.boop, ...MINION_FRAME },
-    boop_b: { x: 350, y: MINION_ROW_Y.boop, ...MINION_FRAME },
-    boop_c: { x: 480, y: MINION_ROW_Y.boop, ...MINION_FRAME },
-  },
-  animations: {
-    walk_up: {
-      frames: ['run_up_a', 'run_up_b', 'run_up_c'],
-      frameRate: 8,
-      repeat: -1,
-    },
-    walk_down: {
-      frames: ['run_down_a', 'run_down_b', 'run_down_c'],
-      frameRate: 8,
-      repeat: -1,
-    },
-    walk_side: {
-      frames: ['run_side_a', 'run_side_b', 'run_side_c'],
-      frameRate: 8,
-      repeat: -1,
-    },
-    stash_up: {
-      frames: ['stash_up_a', 'stash_up_b', 'stash_up_c', 'stash_up_d'],
-      frameRate: 6,
-      repeat: -1,
-    },
-    stash_down: {
-      frames: ['stash_down_a', 'stash_down_b', 'stash_down_c', 'stash_down_d'],
-      frameRate: 6,
-      repeat: -1,
-    },
-    stash_side: {
-      frames: ['stash_side_a', 'stash_side_b', 'stash_side_c'],
-      frameRate: 6,
-      repeat: -1,
-    },
-    boop: {
-      frames: ['boop_a', 'boop_b', 'boop_c'],
-      frameRate: 10,
-      repeat: 0,
-    },
-  },
-};
-
-const professorMcnuttSheet: SpriteSheetManifest = {
-  key: 'professor-mcnutt',
-  url: 'sprites/professor-mcnutt.png',
-  renderSize: { width: 36, height: 42 },
-  renderOffsetY: -4,
-  frames: {
-    glide_down_a: { x: 90, y: MCNUTT_ROW_Y.glide, ...MCNUTT_FRAME },
-    glide_up_a: { x: 480, y: MCNUTT_ROW_Y.glide, ...MCNUTT_FRAME },
-    glide_up_b: { x: 610, y: MCNUTT_ROW_Y.glide, ...MCNUTT_FRAME },
-    glide_up_c: { x: 740, y: MCNUTT_ROW_Y.glide, ...MCNUTT_FRAME },
-    glide_side_a: { x: 1280, y: MCNUTT_ROW_Y.glide, ...MCNUTT_FRAME },
-    glide_side_b: { x: 1410, y: MCNUTT_ROW_Y.glide, ...MCNUTT_FRAME },
-    glide_side_c: { x: 1540, y: MCNUTT_ROW_Y.glide, ...MCNUTT_FRAME },
-
-    cackle_a: { x: 90, y: MCNUTT_ROW_Y.cackle, ...MCNUTT_FRAME },
-    cackle_b: { x: 220, y: MCNUTT_ROW_Y.cackle, ...MCNUTT_FRAME },
-    cackle_c: { x: 350, y: MCNUTT_ROW_Y.cackle, ...MCNUTT_FRAME },
-    cackle_d: { x: 480, y: MCNUTT_ROW_Y.cackle, ...MCNUTT_FRAME },
-    walk_back_a: { x: 620, y: MCNUTT_ROW_Y.cackle, ...MCNUTT_FRAME },
-    walk_back_b: { x: 750, y: MCNUTT_ROW_Y.cackle, ...MCNUTT_FRAME },
-    walk_back_c: { x: 880, y: MCNUTT_ROW_Y.cackle, ...MCNUTT_FRAME },
-    walk_side_a: { x: 1280, y: MCNUTT_ROW_Y.cackle, ...MCNUTT_FRAME },
-    walk_side_b: { x: 1410, y: MCNUTT_ROW_Y.cackle, ...MCNUTT_FRAME },
-    walk_side_c: { x: 1540, y: MCNUTT_ROW_Y.cackle, ...MCNUTT_FRAME },
-
-    swipe_a: { x: 90, y: MCNUTT_ROW_Y.swipe, ...MCNUTT_FRAME },
-  },
-  animations: {
-    cackle: {
-      frames: ['cackle_a', 'cackle_b', 'cackle_c', 'cackle_d'],
-      frameRate: 6,
-      repeat: -1,
-    },
-    glide_down: { frames: ['glide_down_a'], frameRate: 1, repeat: -1 },
-    glide_up: {
-      frames: ['glide_up_a', 'glide_up_b', 'glide_up_c'],
-      frameRate: 6,
-      repeat: -1,
-    },
-    glide_side: {
-      frames: ['glide_side_a', 'glide_side_b', 'glide_side_c'],
-      frameRate: 6,
-      repeat: -1,
-    },
-    walk_up: {
-      frames: ['walk_back_a', 'walk_back_b', 'walk_back_c'],
-      frameRate: 8,
-      repeat: -1,
-    },
-    walk_side: {
-      frames: ['walk_side_a', 'walk_side_b', 'walk_side_c'],
-      frameRate: 8,
-      repeat: -1,
-    },
-    swipe: { frames: ['swipe_a'], frameRate: 1, repeat: 0 },
-  },
-};
+const mcnuttGlideDown = strip('mcnutt_glide_down', 'sprites/mcnutt_glide_down.png', 1, 'glide_down', 1, -1);
+const mcnuttGlideUp = strip('mcnutt_glide_up', 'sprites/mcnutt_glide_up.png', 3, 'glide_up', 6, -1);
+const mcnuttGlideSide = strip('mcnutt_glide_side', 'sprites/mcnutt_glide_side.png', 3, 'glide_side', 6, -1);
+const mcnuttCackle = strip('mcnutt_cackle', 'sprites/mcnutt_cackle.png', 4, 'cackle', 6, -1);
+const mcnuttWalkUp = strip('mcnutt_walk_up', 'sprites/mcnutt_walk_up.png', 3, 'walk_up', 8, -1);
+const mcnuttWalkSide = strip('mcnutt_walk_side', 'sprites/mcnutt_walk_side.png', 3, 'walk_side', 8, -1);
+const mcnuttSwipe = strip('mcnutt_swipe', 'sprites/mcnutt_swipe.png', 1, 'swipe', 1, 0);
 
 export const gameConfig: SchnauzerGameConfig = {
   title: 'Schnauzer Con',
@@ -321,60 +178,82 @@ export const gameConfig: SchnauzerGameConfig = {
 
   sprites: {
     sheets: {
-      'schnauzer-hero': schnauzerHeroSheet,
-      'squirrel-minion': squirrelMinionSheet,
-      'professor-mcnutt': professorMcnuttSheet,
+      [heroIdleDown.key]: heroIdleDown,
+      [heroIdleUp.key]: heroIdleUp,
+      [heroIdleSide.key]: heroIdleSide,
+      [heroWalkDown.key]: heroWalkDown,
+      [heroWalkUp.key]: heroWalkUp,
+      [heroWalkSide.key]: heroWalkSide,
+      [heroDash.key]: heroDash,
+      [minionWalkUp.key]: minionWalkUp,
+      [minionWalkDown.key]: minionWalkDown,
+      [minionWalkSide.key]: minionWalkSide,
+      [minionStashUp.key]: minionStashUp,
+      [minionStashDown.key]: minionStashDown,
+      [minionStashSide.key]: minionStashSide,
+      [minionBoop.key]: minionBoop,
+      [mcnuttGlideDown.key]: mcnuttGlideDown,
+      [mcnuttGlideUp.key]: mcnuttGlideUp,
+      [mcnuttGlideSide.key]: mcnuttGlideSide,
+      [mcnuttCackle.key]: mcnuttCackle,
+      [mcnuttWalkUp.key]: mcnuttWalkUp,
+      [mcnuttWalkSide.key]: mcnuttWalkSide,
+      [mcnuttSwipe.key]: mcnuttSwipe,
     },
+    // Player animations reference their per-strip sheet+animation pair.
+    // The engine treats `sheet` as the sheet that owns the *idle_down*
+    // animation (the player's first attached sprite); other animations
+    // are resolved by their key on whichever sheet defines them.
     player: {
-      sheet: 'schnauzer-hero',
+      sheet: heroIdleDown.key,
       idle: {
-        down: 'idle_down',
-        up: 'idle_up',
-        left: 'idle_side',
-        right: 'idle_side',
+        down: `${heroIdleDown.key}:idle_down`,
+        up: `${heroIdleUp.key}:idle_up`,
+        left: `${heroIdleSide.key}:idle_side`,
+        right: `${heroIdleSide.key}:idle_side`,
       },
       walk: {
-        down: 'walk_down',
-        up: 'walk_up',
-        left: 'walk_side',
-        right: 'walk_side',
+        down: `${heroWalkDown.key}:walk_down`,
+        up: `${heroWalkUp.key}:walk_up`,
+        left: `${heroWalkSide.key}:walk_side`,
+        right: `${heroWalkSide.key}:walk_side`,
       },
       dash: {
-        down: 'dash',
-        up: 'dash',
-        left: 'dash',
-        right: 'dash',
+        down: `${heroDash.key}:dash`,
+        up: `${heroDash.key}:dash`,
+        left: `${heroDash.key}:dash`,
+        right: `${heroDash.key}:dash`,
       },
     },
     minion: {
-      sheet: 'squirrel-minion',
+      sheet: minionWalkDown.key,
       walk: {
-        down: 'walk_down',
-        up: 'walk_up',
-        left: 'walk_side',
-        right: 'walk_side',
+        down: `${minionWalkDown.key}:walk_down`,
+        up: `${minionWalkUp.key}:walk_up`,
+        left: `${minionWalkSide.key}:walk_side`,
+        right: `${minionWalkSide.key}:walk_side`,
       },
       stash: {
-        down: 'stash_down',
-        up: 'stash_up',
-        left: 'stash_side',
-        right: 'stash_side',
+        down: `${minionStashDown.key}:stash_down`,
+        up: `${minionStashUp.key}:stash_up`,
+        left: `${minionStashSide.key}:stash_side`,
+        right: `${minionStashSide.key}:stash_side`,
       },
-      boop: 'boop',
+      boop: `${minionBoop.key}:boop`,
     },
     antagonist: {
-      sheet: 'professor-mcnutt',
-      cackle: 'cackle',
+      sheet: mcnuttCackle.key,
+      cackle: `${mcnuttCackle.key}:cackle`,
       glide: {
-        down: 'glide_down',
-        up: 'glide_up',
-        left: 'glide_side',
-        right: 'glide_side',
+        down: `${mcnuttGlideDown.key}:glide_down`,
+        up: `${mcnuttGlideUp.key}:glide_up`,
+        left: `${mcnuttGlideSide.key}:glide_side`,
+        right: `${mcnuttGlideSide.key}:glide_side`,
       },
       walk: {
-        up: 'walk_up',
-        left: 'walk_side',
-        right: 'walk_side',
+        up: `${mcnuttWalkUp.key}:walk_up`,
+        left: `${mcnuttWalkSide.key}:walk_side`,
+        right: `${mcnuttWalkSide.key}:walk_side`,
       },
     },
   },

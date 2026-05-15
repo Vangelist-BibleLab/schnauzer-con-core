@@ -241,28 +241,29 @@ class SchnauzerScene extends Phaser.Scene {
   }
 
   // ----------------------------------------------------------------------
-  // Pick a sprite frame for the directional animation map. Falls back to
-  // the first frame of any defined direction if the chosen direction is
-  // missing. Returns null if the manifest has nothing for this character.
+  // Pick a fully-qualified animation key for the directional map.
+  //
+  // Directional map values are already in `sheetKey:animName` form (the
+  // gameConfig builds them that way so different animations can live on
+  // different per-strip sheets). We just check `anims.exists()` directly.
+  // Falls back through the requested direction -> mirrored side ->
+  // down -> up -> idle so a missing direction never blanks the sprite.
   // ----------------------------------------------------------------------
   private resolveAnim(
-    sheetKey: string,
     dirMap: DirectionalAnimationMap,
     dir: Direction4
   ): string | null {
     const candidates: Array<keyof DirectionalAnimationMap> = [
       dir,
-      // 'left' and 'right' share side art, but try the explicit opposite
-      // before falling back to 'idle' so we don't silently swap directions.
       dir === 'left' ? 'right' : dir === 'right' ? 'left' : dir,
       'down',
       'up',
       'idle',
     ];
     for (const candidate of candidates) {
-      const animName = dirMap[candidate];
-      if (animName && this.anims.exists(animKey(sheetKey, animName))) {
-        return animKey(sheetKey, animName);
+      const animKeyValue = dirMap[candidate];
+      if (animKeyValue && this.anims.exists(animKeyValue)) {
+        return animKeyValue;
       }
     }
     return null;
@@ -270,12 +271,11 @@ class SchnauzerScene extends Phaser.Scene {
 
   private playDirectional(
     sprite: Phaser.GameObjects.Sprite,
-    sheetKey: string,
     dirMap: DirectionalAnimationMap,
     dir: Direction4,
     flipForLeft: boolean
   ) {
-    const key = this.resolveAnim(sheetKey, dirMap, dir);
+    const key = this.resolveAnim(dirMap, dir);
     if (!key) return;
     if (sprite.anims.currentAnim?.key !== key) {
       sprite.play(key, true);
@@ -294,7 +294,7 @@ class SchnauzerScene extends Phaser.Scene {
     sprite.setDepth(10);
     this.sizeSprite(sprite, sheet);
     this.player.sprite = sprite;
-    this.playDirectional(sprite, sheet.key, playerCfg.idle, 'down', true);
+    this.playDirectional(sprite, playerCfg.idle, 'down', true);
   }
 
   private attachSquirrelSprite(s: SquirrelEntity) {
@@ -306,7 +306,7 @@ class SchnauzerScene extends Phaser.Scene {
     sprite.setDepth(9);
     this.sizeSprite(sprite, sheet);
     s.sprite = sprite;
-    this.playDirectional(sprite, sheet.key, minionCfg.walk, 'down', true);
+    this.playDirectional(sprite, minionCfg.walk, 'down', true);
   }
 
   private sizeSprite(
@@ -477,10 +477,8 @@ class SchnauzerScene extends Phaser.Scene {
   }
 
   private playBoop(s: SquirrelEntity) {
-    const minionCfg = this.config.sprites.minion;
-    const sheet = this.config.sprites.sheets[minionCfg.sheet];
-    if (!s.sprite || !sheet) return;
-    const key = animKey(sheet.key, minionCfg.boop);
+    if (!s.sprite) return;
+    const key = this.config.sprites.minion.boop;
     if (this.anims.exists(key)) {
       s.sprite.play(key, true);
     }
@@ -557,7 +555,7 @@ class SchnauzerScene extends Phaser.Scene {
         : moving
           ? playerCfg.walk
           : playerCfg.idle;
-      this.playDirectional(sprite, playerSheet.key, map, dir, true);
+      this.playDirectional(sprite, map, dir, true);
       sprite.setTint(this.player.flashing ? PALETTE.lightest : 0xffffff);
     }
 
@@ -572,7 +570,7 @@ class SchnauzerScene extends Phaser.Scene {
         const moving = Math.abs(s.vx) > 0.5 || Math.abs(s.vy) > 0.5;
         if (!moving) continue;
         const dir = pickDirection(s.vx, s.vy);
-        this.playDirectional(s.sprite, minionSheet.key, minionCfg.walk, dir, true);
+        this.playDirectional(s.sprite, minionCfg.walk, dir, true);
       }
     }
   }

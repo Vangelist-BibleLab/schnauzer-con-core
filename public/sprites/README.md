@@ -1,97 +1,92 @@
 # Schnauzer Con Sprites
 
-This folder holds the raster sprite sheets the Phaser engine loads at
-runtime. The engine never assumes a uniform sprite grid -- every animation
-frame is described by an explicit `(x, y, w, h)` rectangle in
-`src/content/gameConfig.ts`.
+This folder holds the runtime sprite strips the Phaser engine loads at
+boot. Each strip is a tight horizontal `48 x 48` per-cell PNG containing
+the frames of a single animation, with transparent background. The
+runtime manifest in `src/content/gameConfig.ts` references them through
+the same named-frame + named-animation API the engine has always used.
 
-## Files
+## Strips
 
-| File | Used by | Source size |
+| File | Frames | Use |
 | --- | --- | --- |
-| `schnauzer-hero.png` | Player schnauzer (Rover / Pickles) | 1980 x 1080 |
-| `squirrel-minion.png` | McNutt minion squirrels | 1980 x 1080 |
-| `professor-mcnutt.png` | Professor McNutt (cutscenes / future volumes) | 1980 x 1080 |
+| `hero_idle_down.png` / `_up.png` / `_side.png` | 1 each | Player resting pose per facing |
+| `hero_walk_down.png` / `_up.png` | 4 each | Player walk cycle, facing camera / away |
+| `hero_walk_side.png` | 3 | Player walk cycle, side-on (auto-flipped left) |
+| `hero_dash.png` | 1 | Flash Dash pose |
+| `minion_walk_up.png` / `_down.png` / `_side.png` | 3 each | Squirrel run cycle |
+| `minion_stash_up.png` / `_down.png` | 4 each | Squirrel carrying an acorn |
+| `minion_stash_side.png` | 3 | Squirrel carrying an acorn, side-on |
+| `minion_boop.png` | 4 | Knockout reaction (plays once, sprite fades) |
+| `mcnutt_glide_*.png` / `_cackle.png` / `_walk_*.png` / `_swipe.png` | 1-4 | Loaded for future cutscenes; not rendered in the main loop yet |
 
-The PNGs are direct conversions of the original `*.jpg` labeled design
-sheets. Transparency comes from alpha-on-white retained during the JPG ->
-PNG conversion; if you need a tighter alpha mask, re-export the sheet
-from your image editor and drop it here under the same filename.
+Every strip is `48 px tall` and `48 * frameCount px wide`. Frames are
+laid out left-to-right with no gutter -- this is exactly what Phaser's
+`load.spritesheet` expects, so the engine doesn't need per-frame
+bookkeeping at runtime.
 
-## Sheet layout (first-pass)
+## Where the strips come from
 
-Each sheet has three labeled rows. The labels and blank cells from the
-source sheets are still visible -- the engine simply ignores them and
-draws only the frame rectangles declared in `gameConfig.ts`.
+The original design sheets at
+`/home/user/workspace/{Schnauzer_Hero,Minion,Professor_McNutt}_Sprite_Sheet.jpg`
+are 1980 x 1080 labeled JPGs with row headers (`ROW 1: IDLE`, etc.),
+guide-box outlines, and irregular cell spacing. They are great for art
+review but terrible to feed straight to Phaser -- exactly what shipped
+the first time, when garbled label fragments like `"ONT"` appeared in
+the playfield.
 
-### `schnauzer-hero.png`
+`scripts/extract_sprite_strips.py` solves that by preprocessing each
+design sheet into the strips listed above:
 
-- **Row 1 (`y ~= 100`) -- Idle:** front (down), back (up), side.
-- **Row 2 (`y ~= 360`) -- Walk cycle:** walk down, walk up, walk side.
-- **Row 3 (`y ~= 620`) -- Flash Dash action.**
+1. **Crop** to a known row band and a known per-direction x range
+   (`HERO_LAYOUT`, `MINION_LAYOUT`, `MCNUTT_LAYOUT` in the script).
+2. **Detect** each character's bounding box by thresholding saturated-
+   color pixels and dilating to merge body / ears / tail / held acorn
+   into a single connected component.
+3. **Alpha-key** the checker background, white margins, and outline
+   guides so only the colored character pixels survive.
+4. **Scale-fit** each frame into a `48 x 48` cell (nearest-neighbour to
+   preserve the pixel-art look) and bottom-align so feet sit on the
+   cell baseline.
+5. **Pad** short strips by repeating the last detected frame, so the
+   engine never has to handle a 0-frame animation.
 
-Default frame size is `110 x 130` px. Displayed in-game at `36 x 42` so
-the sprite roughly matches the 9 px hitbox radius without ever changing
-collision logic.
+Strips are committed to the repo, so this script does not run in
+production -- it is only re-run when an artist refreshes a source
+sheet.
 
-### `squirrel-minion.png`
+## Regenerating after an art update
 
-- **Row 1 (`y ~= 110`) -- The Run:** walk up, walk down, walk right.
-- **Row 2 (`y ~= 380`) -- The Stash:** carrying an acorn, three facings.
-- **Row 3 (`y ~= 650`) -- The Boop:** knock-out reaction.
+```bash
+python3 scripts/extract_sprite_strips.py
+```
 
-Default frame size is `110 x 130` px; rendered at `28 x 34`.
+Requires `Pillow`, `numpy`, and `scipy`. The script writes only the PNG
+files in this folder. If the new sheet has a different row layout, edit
+the per-row `(y0, y1, (x0, x1), max_frames, dilation, min_h)` tuples in
+the script's `*_LAYOUT` dicts -- nothing in `src/game/` needs to change.
 
-### `professor-mcnutt.png`
+## Swapping art for a new volume
 
-- **Row 1 (`y ~= 110`) -- The Glider:** front, back, side glides.
-- **Row 2 (`y ~= 380`) -- The Cackle / walk variants.**
-- **Row 3 (`y ~= 650`) -- The Swipe.**
-
-McNutt is not rendered in the main gameplay loop yet; the manifest is
-loaded so future cutscenes can play `cackle` / `glide_*` without engine
-changes.
-
-## How to refine frame coordinates
-
-The first-pass `(x, y, w, h)` values in `gameConfig.ts` were eyeballed
-from the design sheets. To tighten them:
-
-1. Open the desired sheet in any pixel editor (Aseprite, GIMP, Photoshop).
-2. Read the bounding box of the cell you want to fix.
-3. Update the matching entry in `src/content/gameConfig.ts` under
-   `sprites.sheets.<key>.frames.<frameName>`.
-4. Optional: adjust `renderSize` / `renderOffsetY` to change how the
-   sprite is drawn relative to the hitbox center.
-
-No engine code needs to change. Animations are also defined in the same
-manifest -- add a new entry under `animations` and reference it from
-`sprites.player`, `sprites.minion`, or `sprites.antagonist`.
-
-## Replacing the art
-
-Drop a new PNG into this folder under the same filename and the engine
-will pick it up on the next reload. If the new art uses a different cell
-layout, update the frame rectangles in `gameConfig.ts` to match.
-
-For an entirely new volume:
-
-1. Add new files (e.g. `schnauzer-hero-vol2.png`) here.
-2. Author a new `SpriteSheetManifest` in the volume's config that points
-   at those files and declares the volume's animation set.
-3. Wire `sprites.player`, `sprites.minion`, `sprites.antagonist` to the
-   new sheet keys. The engine reads everything from the manifest, so
-   nothing in `src/game/` needs to be edited.
+1. Drop a new strip into this folder (e.g. `vol2_hero_walk_down.png`)
+   matching the `48 x 48 x N` layout.
+2. Reference it from a `SpriteSheetManifest` in that volume's
+   `gameConfig` (use the existing `strip()` helper as a template).
+3. Wire the manifest into `sprites.player.walk.down` / etc. The engine
+   reads everything from the manifest, so no engine edits are needed.
 
 ## Caveats
 
-- The source sheets are JPGs with a checker-pattern background baked in.
-  When drawn full-frame they look correct (the checker reads as part of
-  the design layout), but tight per-frame alpha trimming would need a
-  re-export from the original art.
-- Frame rectangles assume the sprite is roughly centered within each
-  labeled cell. Some cells in the source sheets are slightly offset; if
-  a particular frame looks misaligned in-game, nudge that frame's
-  `(x, y)` in `gameConfig.ts`.
-- Left-facing art reuses the right-facing frames with `setFlipX(true)`,
-  so the side-walk animation does not need a mirrored copy in the sheet.
+- The first-pass strips were generated programmatically from labeled
+  design sheets, not hand-cropped by an artist. A pixel artist re-cut
+  for tighter alpha trimming or per-direction shading would slot in
+  here without engine changes.
+- Side animations use a single right-facing strip and `setFlipX(true)`
+  for left-facing. If an artist later draws an explicit left strip, add
+  a `walk_left` entry to the manifest and the engine will use it
+  automatically (the directional resolver only flips when the requested
+  direction is missing).
+- The vibrant 8-bit palette in `tailwind.config.js` and the engine's
+  background/overlay layers is untouched. Sprite art carries its own
+  source colors (cyan-pink schnauzer, brown squirrels, orange McNutt),
+  which sit cleanly on top of the sunny-yellow grass.

@@ -43,19 +43,23 @@ public/
 
 ## Sprites and animations
 
-Sprite art lives under `public/sprites/` and is loaded by Phaser at runtime
-using a **named-frame manifest** declared in `src/content/gameConfig.ts`
-(`sprites.sheets`). Each frame is an explicit `(x, y, w, h)` rectangle in
-the source sheet, so the engine works with labeled "design" sheets that
-have row headers, blank cells, and irregular spacing -- no uniform grid
-required.
+Sprite art lives under `public/sprites/` as one tight `48 x 48` strip per
+animation, and is loaded by Phaser at boot via a **named-frame manifest**
+declared in `src/content/gameConfig.ts` (`sprites.sheets`). The runtime
+strips are produced from the labeled design sheets in
+`/home/user/workspace/*_Sprite_Sheet.jpg` by
+`scripts/extract_sprite_strips.py`, which alpha-keys the checker
+background, drops the label text and guide boxes, and bottom-aligns each
+character into a uniform cell. Strips are committed to the repo, so the
+script never runs in production.
 
 The engine itself reads the manifest, registers frames + animations on
 scene create, and picks `walk`/`idle`/`dash` (player) or
 `walk`/`stash`/`boop` (minion) per facing direction. Hitboxes remain the
 source of collision truth -- sprites are a visual layer that follows the
 existing position/radius math. See `public/sprites/README.md` for the
-first-pass frame layout and how to refine or swap art in future volumes.
+strip catalogue, the preprocessing pipeline, and how to swap art for a
+future volume.
 
 ## Architecture
 
