@@ -27,7 +27,7 @@ export function StatusBar({
       </span>
       <span
         data-testid="text-flash"
-        className={flashReady ? 'text-gb-darkest' : 'text-gb-dark'}
+        className={flashReady ? 'text-gb-darkest' : 'text-gb-darkest/50'}
       >
         FLASH {flashReady ? 'READY' : '...'}
       </span>

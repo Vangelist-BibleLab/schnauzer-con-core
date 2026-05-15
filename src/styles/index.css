@@ -3,16 +3,20 @@
 @tailwind utilities;
 
 /* ---------------------------------------------------------------------- */
-/* Game Boy 4-color palette enforcement. Anything outside this palette    */
-/* should be considered an error -- Lovable.dev should derive new shades  */
-/* by editing tailwind.config.js, not by inlining new colors here.        */
+/* Vibrant 8-bit palette. Keep all in-app color references using these    */
+/* tokens via Tailwind (`bg-gb-*`, `text-gb-*`) or these CSS variables so */
+/* the look stays cohesive.                                               */
+/*   --gb-darkest : deep ink navy   (frame, text, silhouettes)            */
+/*   --gb-dark    : bright cyan     (mid-tone, NPCs, secondary surfaces)  */
+/*   --gb-light   : bubblegum pink  (player accents, primary highlights)  */
+/*   --gb-lightest: sunny yellow    (light panels, halos)                 */
 /* ---------------------------------------------------------------------- */
 :root {
-  --gb-darkest: #0f380f;
-  --gb-dark: #306230;
-  --gb-light: #8bac0f;
-  --gb-lightest: #9bbc0f;
-  color-scheme: light;
+  --gb-darkest: #1a1240;
+  --gb-dark: #1fb8ff;
+  --gb-light: #ff4fa3;
+  --gb-lightest: #ffe34a;
+  color-scheme: dark;
 }
 
 html,
@@ -52,6 +56,6 @@ button {
 }
 
 button:focus-visible {
-  outline: 2px solid var(--gb-lightest);
+  outline: 2px solid var(--gb-light);
   outline-offset: 2px;
 }

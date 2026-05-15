@@ -9,10 +9,10 @@ export const gameConfig: SchnauzerGameConfig = {
   subtitle: 'The Nut-Job Ruse',
 
   paletteLabels: {
-    darkest: 'Walnut Shell',
-    dark: 'Mossy Bark',
-    light: 'Lawn Sprig',
-    lightest: 'Sunlit Hedge',
+    darkest: 'Midnight Ink',
+    dark: 'Bubble Cyan',
+    light: 'Bubblegum Pink',
+    lightest: 'Sunshine Pop',
   },
 
   defaultPlayerId: 'rover',

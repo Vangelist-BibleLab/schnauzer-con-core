@@ -1,6 +1,6 @@
 # Schnauzer Con: Volume 1 — The Nut-Job Ruse
 
-A Game Boy-styled, top-down browser caper in which **Rover** or **Pickles Peppers**
+A vibrant 8-bit, top-down browser caper in which **Rover** or **Pickles Peppers**
 chase down **Professor McNutt's** squirrel minions to recover a stolen stash of
 25 acorns. Built with React + Vite + TypeScript + Tailwind, with the game loop
 running in **Phaser.js** inside a React component so Lovable.dev can manage the
@@ -28,16 +28,16 @@ src/
     types.ts               # Typed config + runtime state contracts.
   components/
     PhaserGame.tsx         # React wrapper that mounts the engine.
-    GameBoyShell.tsx       # Game Boy chrome around the canvas.
+    GameBoyShell.tsx       # 8-bit arcade-cabinet chrome around the canvas.
     DialogueOverlay.tsx    # INTRO_DIALOGUE / CUTSCENE overlay.
     StatusBar.tsx          # Acorns, time, flash dash readiness.
     CharacterSelect.tsx    # Rover vs Pickles Peppers picker.
     ControlsGuide.tsx      # Controls cheat sheet.
-  styles/index.css         # Tailwind + 4-color palette enforcement.
+  styles/index.css         # Tailwind + vibrant 8-bit palette tokens.
   App.tsx                  # Composes the shell, engine, and overlays.
   main.tsx                 # React entry point.
 public/
-  schnauzer.svg            # Pixel-art favicon in the GB palette.
+  schnauzer.svg            # Pixel-art favicon in the vibrant 8-bit palette.
 ```
 
 ## Architecture
@@ -50,19 +50,19 @@ public/
   copy and tunables — player names, default character, level acorn goal (25 by
   default), dialogue beats, Professor McNutt taunts, squirrel minion settings,
   and palette labels. Lovable.dev edits should live here.
-- **React shell** wraps the canvas in a Game Boy frame, status display, dialogue
-  overlay, controls guide, and character selector.
-- **Palette** is enforced both in Tailwind (`tailwind.config.js → colors.gb`)
+- **React shell** wraps the canvas in an 8-bit arcade frame, status display,
+  dialogue overlay, controls guide, and character selector.
+- **Palette** is defined both in Tailwind (`tailwind.config.js → colors.gb`)
   and in CSS variables (`src/styles/index.css`) so any stray color stands out.
 
-### Game Boy palette
+### Vibrant 8-bit palette
 
 | Token             | Hex       | Label (configurable)         |
 | ----------------- | --------- | ---------------------------- |
-| `gb-darkest`      | `#0f380f` | Walnut Shell                 |
-| `gb-dark`         | `#306230` | Mossy Bark                   |
-| `gb-light`        | `#8bac0f` | Lawn Sprig                   |
-| `gb-lightest`     | `#9bbc0f` | Sunlit Hedge                 |
+| `gb-darkest`      | `#1a1240` | Midnight Ink                 |
+| `gb-dark`         | `#1fb8ff` | Bubble Cyan                  |
+| `gb-light`        | `#ff4fa3` | Bubblegum Pink               |
+| `gb-lightest`     | `#ffe34a` | Sunshine Pop                 |
 
 ### Controls
 
@@ -79,7 +79,7 @@ public/
   or rearrange them as needed, but keep `PhaserGame.tsx` mounting the engine
   exactly once.
 - Keep the app frontend-only. No backend is currently required.
-- Maintain the 4-color palette. Add new shades by extending
+- Maintain the vibrant 4-token palette. Add new shades by extending
   `tailwind.config.js → theme.extend.colors.gb` rather than dropping hex values
   into components.
 - Run `npm run typecheck` and `npm run build` before opening a PR.

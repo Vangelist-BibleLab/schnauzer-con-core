@@ -4,12 +4,14 @@ export default {
   theme: {
     extend: {
       colors: {
-        // 4-color Game Boy DMG-inspired green palette
+        // Vibrant 8-bit palette: deep ink navy, bright cyan, bubblegum pink,
+        // and sunny yellow. Keys are kept (`darkest`/`dark`/`light`/`lightest`)
+        // so existing class names stay stable; values are remapped.
         gb: {
-          darkest: '#0f380f',
-          dark: '#306230',
-          light: '#8bac0f',
-          lightest: '#9bbc0f',
+          darkest: '#1a1240',
+          dark: '#1fb8ff',
+          light: '#ff4fa3',
+          lightest: '#ffe34a',
         },
       },
       fontFamily: {

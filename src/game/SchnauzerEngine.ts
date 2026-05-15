@@ -22,14 +22,18 @@ export type EngineEvent =
 export type EngineListener = (event: EngineEvent) => void;
 
 // --------------------------------------------------------------------------
-// Game Boy palette (kept here as numeric ints for Phaser graphics calls).
-// The CSS layer mirrors these as hex strings in tailwind.config.js.
+// Vibrant 8-bit palette (numeric ints for Phaser graphics calls). The CSS
+// layer mirrors these as hex strings in tailwind.config.js / index.css.
+//   darkest : deep ink navy
+//   dark    : bright cyan      (used for NPC squirrels)
+//   light   : bubblegum pink   (player accent, grass shadow dots)
+//   lightest: sunny yellow     (canvas background, player halo)
 // --------------------------------------------------------------------------
 const PALETTE = {
-  darkest: 0x0f380f,
-  dark: 0x306230,
-  light: 0x8bac0f,
-  lightest: 0x9bbc0f,
+  darkest: 0x1a1240,
+  dark: 0x1fb8ff,
+  light: 0xff4fa3,
+  lightest: 0xffe34a,
 };
 
 // --------------------------------------------------------------------------
@@ -348,7 +352,7 @@ class SchnauzerScene extends Phaser.Scene {
 
   // ----------------------------------------------------------------------
   // Rendering: pure Graphics primitives keep the game asset-free and
-  // guarantee the 4-color palette.
+  // guarantee the vibrant 4-token palette.
   // ----------------------------------------------------------------------
   private render() {
     const g = this.gfx;
@@ -356,7 +360,8 @@ class SchnauzerScene extends Phaser.Scene {
 
     const { arenaWidth, arenaHeight, tileSize } = this.config.level;
 
-    // Grass background pattern using only the two lightest greens.
+    // Field background pattern: sunny yellow base + bubblegum-pink dots
+    // for an unmistakable 8-bit arcade lawn.
     g.fillStyle(PALETTE.lightest, 1);
     g.fillRect(0, 0, arenaWidth, arenaHeight);
     g.fillStyle(PALETTE.light, 1);
@@ -387,42 +392,42 @@ class SchnauzerScene extends Phaser.Scene {
 
   // ----------------------------------------------------------------------
   // Player schnauzer -- drawn last so it always sits above squirrels.
-  // High-contrast layered build inside the 4-color Game Boy palette:
-  //   outer ring   : PALETTE.lightest  (halo against grass and dark squirrels)
-  //   body         : PALETTE.darkest   (unmistakable silhouette)
-  //   inner core   : PALETTE.light     (warm chest patch -- not the grass color)
-  //   ears & tail  : PALETTE.darkest   (pixel accents in known offsets)
-  //   muzzle dot   : PALETTE.lightest  (faces movement direction)
-  //   "P" label    : PALETTE.darkest on PALETTE.lightest plate, above player
+  // High-contrast layered build inside the vibrant 4-color palette:
+  //   outer ring : PALETTE.light    (bubblegum-pink halo on yellow grass)
+  //   body       : PALETTE.darkest  (deep-navy silhouette)
+  //   chest      : PALETTE.lightest (sunny-yellow inner core)
+  //   ears, tail : PALETTE.darkest  (pixel accents in known offsets)
+  //   muzzle dot : PALETTE.lightest (faces movement direction)
+  //   "P" label  : navy glyph on yellow plate, sat above the player
   // ----------------------------------------------------------------------
   private renderPlayer(g: Phaser.GameObjects.Graphics) {
     const r = this.player.radius;
     const px = Math.round(this.player.x);
     const py = Math.round(this.player.y);
 
-    // Bright halo / outline so the sprite never blends into either
-    // the light grass or the darker squirrels.
-    g.fillStyle(PALETTE.lightest, 1);
+    // Pink halo so the sprite never blends into the yellow grass or
+    // the cyan squirrels -- pink is unused by the field tiles or NPCs.
+    g.fillStyle(PALETTE.light, 1);
     g.fillRect(px - r - 2, py - r - 2, r * 2 + 4, r * 2 + 4);
 
-    // Body. Flash Dash shimmer alternates between darkest and dark for
-    // a clearly readable "boost" without leaving the palette.
+    // Body. Flash Dash shimmer alternates between darkest (navy) and
+    // dark (cyan) for a readable "boost" without leaving the palette.
     const flashOn =
       this.player.flashing && Math.floor(this.time.now / 60) % 2 === 0;
     g.fillStyle(flashOn ? PALETTE.dark : PALETTE.darkest, 1);
     g.fillRect(px - r, py - r, r * 2, r * 2);
 
-    // Chest patch -- a brighter inner block makes the schnauzer pop even
-    // when surrounded by similarly shaped enemies.
-    g.fillStyle(PALETTE.light, 1);
+    // Yellow chest patch keeps the schnauzer instantly identifiable
+    // even when squirrels (cyan) are adjacent.
+    g.fillStyle(PALETTE.lightest, 1);
     g.fillRect(px - 3, py - 1, 6, 5);
 
-    // Ears: two darker pixels poking above the body silhouette.
+    // Ears: two navy pixels poking above the body silhouette.
     g.fillStyle(PALETTE.darkest, 1);
     g.fillRect(px - r + 1, py - r - 3, 3, 3);
     g.fillRect(px + r - 4, py - r - 3, 3, 3);
 
-    // Tail: opposite of facing direction, same dark accent.
+    // Tail: opposite of facing direction, same navy accent.
     g.fillRect(
       px - Math.round(this.player.facing.x * (r + 1)) - 1,
       py - Math.round(this.player.facing.y * (r + 1)) - 1,
@@ -506,7 +511,7 @@ export class SchnauzerEngine {
       width: this.config.level.arenaWidth,
       height: this.config.level.arenaHeight,
       pixelArt: true,
-      backgroundColor: '#9bbc0f',
+      backgroundColor: '#ffe34a',
       scale: {
         mode: Phaser.Scale.FIT,
         autoCenter: Phaser.Scale.CENTER_BOTH,
