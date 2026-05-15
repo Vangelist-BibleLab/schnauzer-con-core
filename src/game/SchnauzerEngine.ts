@@ -28,7 +28,8 @@ export type EngineEvent =
   | { type: 'FLASH_READY'; payload: boolean }
   | { type: 'TIME'; payload: number }
   | { type: 'DIALOGUE'; payload: number }
-  | { type: 'MESSAGE'; payload: string };
+  | { type: 'MESSAGE'; payload: string }
+  | { type: 'PLAYER_IDENTITY'; payload: { id: string; name: string } };
 
 export type EngineListener = (event: EngineEvent) => void;
 
@@ -698,11 +699,23 @@ export class SchnauzerEngine {
   private state: RuntimeGameState;
 
   constructor(private parent: HTMLElement, private config: SchnauzerGameConfig) {
+    const identity = config.playerIdentity;
+    // Resolve default character id: prefer playerIdentity, fall back to the
+    // deprecated top-level defaultPlayerId, then the first player.
+    const defaultId =
+      identity?.defaultPlayerCharacterId ||
+      config.defaultPlayerId ||
+      config.players[0]?.id ||
+      '';
+    const defaultChar = config.players.find((p) => p.id === defaultId);
+    const defaultName =
+      identity?.defaultPlayerName ?? defaultChar?.name ?? defaultId;
     this.state = {
       status: 'INTRO_DIALOGUE',
       acorns: 0,
       goal: config.level.acornGoal,
-      selectedPlayerId: config.defaultPlayerId,
+      selectedPlayerId: defaultId,
+      playerName: defaultName,
       dialogueIndex: 0,
       flashDashReady: true,
       timeRemaining: config.level.durationSeconds,
@@ -785,9 +798,53 @@ export class SchnauzerEngine {
   }
 
   selectPlayer(id: string) {
-    if (this.config.players.some((p) => p.id === id)) {
-      this.state.selectedPlayerId = id;
+    const next = this.config.players.find((p) => p.id === id);
+    if (!next) return;
+    this.state.selectedPlayerId = id;
+    // Switching characters resets the player-facing name to the new
+    // character's default. Players who want a custom name can rename
+    // again afterwards.
+    this.state.playerName =
+      this.config.playerIdentity?.defaultPlayerName ?? next.name;
+    this.dispatch({
+      type: 'PLAYER_IDENTITY',
+      payload: { id: this.state.selectedPlayerId, name: this.state.playerName },
+    });
+  }
+
+  /**
+   * Set the player-facing name. Trimmed; empty input resets to the default
+   * for the currently selected character. No-op when the Volume has
+   * `allowPlayerRename: false`.
+   */
+  renamePlayer(nextName: string) {
+    if (!this.config.playerIdentity?.allowPlayerRename) return;
+    const trimmed = nextName.trim();
+    if (trimmed.length === 0) {
+      this.resetPlayerName();
+      return;
     }
+    // Cap length so the status bar / dialogue stay readable.
+    this.state.playerName = trimmed.slice(0, 24);
+    this.dispatch({
+      type: 'PLAYER_IDENTITY',
+      payload: { id: this.state.selectedPlayerId, name: this.state.playerName },
+    });
+  }
+
+  /** Reset the player-facing name to the current character's default. */
+  resetPlayerName() {
+    const current = this.config.players.find(
+      (p) => p.id === this.state.selectedPlayerId
+    );
+    this.state.playerName =
+      this.config.playerIdentity?.defaultPlayerName ??
+      current?.name ??
+      this.state.selectedPlayerId;
+    this.dispatch({
+      type: 'PLAYER_IDENTITY',
+      payload: { id: this.state.selectedPlayerId, name: this.state.playerName },
+    });
   }
 
   private resetRun() {
@@ -820,6 +877,10 @@ export class SchnauzerEngine {
         break;
       case 'MESSAGE':
         this.state.message = event.payload;
+        break;
+      case 'PLAYER_IDENTITY':
+        this.state.selectedPlayerId = event.payload.id;
+        this.state.playerName = event.payload.name;
         break;
     }
     for (const l of this.listeners) l(event);

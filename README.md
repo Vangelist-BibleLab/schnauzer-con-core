@@ -67,12 +67,14 @@ src/
   content/
     gameConfig.ts          # Volume content: copy, characters, goals, sprites.
     types.ts               # Typed config + runtime state contracts.
+    dialogue.ts            # `{player}` placeholder substitution for lines.
   components/
     PhaserGame.tsx         # React wrapper that mounts the engine.
     GameBoyShell.tsx       # 8-bit arcade-cabinet chrome around the canvas.
     DialogueOverlay.tsx    # INTRO_DIALOGUE / CUTSCENE overlay.
     StatusBar.tsx          # Acorns, time, flash dash readiness.
     CharacterSelect.tsx    # Player picker.
+    PlayerNameInput.tsx    # Optional rename input (shown per Volume config).
     ControlsGuide.tsx      # Controls cheat sheet.
   styles/index.css         # Tailwind + vibrant 8-bit palette tokens.
   App.tsx                  # Composes the shell, engine, and overlays.
@@ -81,6 +83,55 @@ public/
   schnauzer.svg            # Pixel-art favicon in the vibrant 8-bit palette.
   sprites/                 # Sprite strips + manifest docs (see sprites/README.md).
 ```
+
+## Player identity: character vs. name
+
+The engine separates **who you are playing** (the character) from **what
+you are called** (the player-facing name). Three pieces of vocabulary keep
+this clean:
+
+- **`id` (character id)** — a stable, internal identifier on each
+  `PlayerCharacter`. Engine code, sprite manifests, and save data key on
+  this. It never changes when the player renames themself.
+- **default character** — the character chosen automatically at boot.
+  Set per Volume by `playerIdentity.defaultPlayerCharacterId` in
+  `gameConfig.ts`. Volume 1 ships with `pickles` (Pickles Peppers) as
+  the default playable character; Rover la Flash and Hunter S. Hound are
+  also available.
+- **player-facing name** — the display name shown in the status bar and
+  dialogue. Starts as the chosen character's `name` and, if the Volume
+  allows it, can be edited by the player at any time.
+
+### Renaming
+
+Each Volume decides whether the player may type their own name. The
+config block lives next to the rest of the content:
+
+```ts
+playerIdentity: {
+  defaultPlayerCharacterId: 'pickles',
+  allowPlayerRename: true,
+  renamePromptLabel: 'Player name',
+  renamePromptHelp: 'Keep the default or type your own name.',
+  renameResetLabel: 'Use default',
+}
+```
+
+- Set `allowPlayerRename: false` and the rename input is hidden — the
+  player-facing name is always the character's default.
+- Switching characters resets the player-facing name to the new
+  character's default. The player can rename again after switching.
+- Dialogue lines may use `{player}` as a placeholder for the chosen
+  name (in either `speaker` or `text`). The shell substitutes it at
+  render time, so story copy reads naturally regardless of what the
+  player typed.
+
+### Swapping the default character for a new Volume
+
+A future Volume can change the default playable character by editing
+`playerIdentity.defaultPlayerCharacterId` (and the `players` list).
+Disabling rename for a Volume is a one-line flip of
+`allowPlayerRename`. The engine has no hardcoded character names.
 
 ## Sprites and animations
 

@@ -10,12 +10,48 @@ export interface PaletteLabels {
 }
 
 export interface PlayerCharacter {
+  /**
+   * Stable internal id for the character. Engine/asset code keys on this --
+   * it never changes, even if the player renames themself.
+   */
   id: string;
+  /** Default display name shown in UI and dialogue when no rename is set. */
   name: string;
   shortName: string;
   description: string;
   /** Tint or accent color label from the palette. */
   accent: keyof PaletteLabels;
+}
+
+/**
+ * Volume-level player identity config. Lets each Volume pick its own default
+ * playable character and decide whether the player may rename them. The
+ * engine reads this config but has no hardcoded knowledge of which character
+ * is the default.
+ */
+export interface PlayerIdentityConfig {
+  /**
+   * Stable character id of the playable character selected by default at
+   * boot. Must match an `id` in `players`.
+   */
+  defaultPlayerCharacterId: string;
+  /**
+   * Optional override for the default *player-facing* name. If omitted, the
+   * default character's `name` is used. Typically left undefined so the
+   * character's name is the default and the player can change it.
+   */
+  defaultPlayerName?: string;
+  /**
+   * If true, the rename UI is shown and the engine accepts `renamePlayer`
+   * calls. If false, the player-facing name is always the default.
+   */
+  allowPlayerRename: boolean;
+  /** Plain-language label above the rename input. */
+  renamePromptLabel?: string;
+  /** Helper text under the rename input. */
+  renamePromptHelp?: string;
+  /** Reset-to-default button label. */
+  renameResetLabel?: string;
 }
 
 export interface SquirrelMinionConfig {
@@ -181,7 +217,14 @@ export interface SchnauzerGameConfig {
   volume: string;
   subtitle: string;
   paletteLabels: PaletteLabels;
-  defaultPlayerId: string;
+  /**
+   * @deprecated Use `playerIdentity.defaultPlayerCharacterId`. Kept for
+   * backwards compatibility with older Volume configs; if both are present
+   * `playerIdentity` wins.
+   */
+  defaultPlayerId?: string;
+  /** Volume's player-identity rules (default character, rename support). */
+  playerIdentity: PlayerIdentityConfig;
   players: PlayerCharacter[];
   antagonist: AntagonistConfig;
   squirrels: SquirrelMinionConfig;
@@ -197,7 +240,14 @@ export interface RuntimeGameState {
   status: GameStateName;
   acorns: number;
   goal: number;
+  /** Stable id of the currently selected playable character. */
   selectedPlayerId: string;
+  /**
+   * Player-facing display name. Starts at the default for the selected
+   * character (or `playerIdentity.defaultPlayerName` if set) and can be
+   * overridden by the player when renaming is allowed.
+   */
+  playerName: string;
   dialogueIndex: number;
   flashDashReady: boolean;
   timeRemaining: number;

@@ -86,16 +86,15 @@ export const gameConfig: SchnauzerGameConfig = {
     lightest: 'Sunshine Pop',
   },
 
-  defaultPlayerId: 'rover',
+  playerIdentity: {
+    defaultPlayerCharacterId: 'pickles',
+    allowPlayerRename: true,
+    renamePromptLabel: 'Player name',
+    renamePromptHelp:
+      'Keep the default or type your own name. The story will use whatever you choose.',
+    renameResetLabel: 'Use default',
+  },
   players: [
-    {
-      id: 'rover',
-      name: 'Rover',
-      shortName: 'ROV',
-      description:
-        'Senior schnauzer. Beard like a broom, nose like a bloodhound. Has chased Professor McNutt across three backyards.',
-      accent: 'darkest',
-    },
     {
       id: 'pickles',
       name: 'Pickles Peppers',
@@ -103,6 +102,22 @@ export const gameConfig: SchnauzerGameConfig = {
       description:
         'Spry mini schnauzer. Quicker turns, snappier Flash Dash. Hates losing acorns more than baths.',
       accent: 'dark',
+    },
+    {
+      id: 'rover',
+      name: 'Rover la Flash',
+      shortName: 'RLF',
+      description:
+        'Senior schnauzer in a satin cape. Beard like a broom, nose like a bloodhound, dash like a thunderclap.',
+      accent: 'darkest',
+    },
+    {
+      id: 'hunter',
+      name: 'Hunter S. Hound',
+      shortName: 'HSH',
+      description:
+        'Wire-haired investigator. Files dispatches between boops. Refuses to chase a squirrel without a deadline.',
+      accent: 'light',
     },
   ],
 
@@ -145,29 +160,32 @@ export const gameConfig: SchnauzerGameConfig = {
     hitboxRadius: 9,
   },
 
+  // Dialogue may use `{player}` as a placeholder for the chosen player-facing
+  // name. The engine substitutes it at render time so custom names read
+  // naturally. Lines spoken BY the player use speaker `{player}`.
   intro: [
     {
       speaker: 'Professor McNutt',
       text: 'Ha! Twenty-five acorns vanish from your bowl and the schnauzer suspects... a SQUIRREL? How original.',
     },
     {
-      speaker: 'Rover',
-      text: 'McNutt. I would know that smug tail-flick anywhere. Pickles, ready the Flash Dash.',
+      speaker: '{player}',
+      text: 'McNutt. I would know that smug tail-flick anywhere. Time to ready the Flash Dash.',
     },
     {
-      speaker: 'Pickles Peppers',
+      speaker: '{player}',
       text: 'Boop first, bark later. Let us go round up these little nut-thieves.',
     },
   ],
 
   victory: [
     {
-      speaker: 'Rover',
+      speaker: '{player}',
       text: 'Stash recovered. McNutt scampered up the oak again.',
     },
     {
       speaker: 'Professor McNutt',
-      text: 'This is not over, schnauzers! Volume Two will bury you in shells!',
+      text: 'This is not over, {player}! Volume Two will bury you in shells!',
     },
   ],
 

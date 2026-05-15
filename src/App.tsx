@@ -5,9 +5,25 @@ import { DialogueOverlay } from '@/components/DialogueOverlay';
 import { StatusBar } from '@/components/StatusBar';
 import { CharacterSelect } from '@/components/CharacterSelect';
 import { ControlsGuide } from '@/components/ControlsGuide';
+import { PlayerNameInput } from '@/components/PlayerNameInput';
 import { gameConfig } from '@/content/gameConfig';
+import { interpolateDialogue } from '@/content/dialogue';
 import type { SchnauzerEngine } from '@/game/SchnauzerEngine';
 import type { RuntimeGameState } from '@/content/types';
+
+const identity = gameConfig.playerIdentity;
+const initialPlayerId =
+  identity?.defaultPlayerCharacterId ??
+  gameConfig.defaultPlayerId ??
+  gameConfig.players[0]?.id ??
+  '';
+const initialCharacter = gameConfig.players.find(
+  (p) => p.id === initialPlayerId
+);
+const initialPlayerName =
+  identity?.defaultPlayerName ??
+  initialCharacter?.name ??
+  initialPlayerId;
 
 export default function App() {
   const [engine, setEngine] = useState<SchnauzerEngine | null>(null);
@@ -15,7 +31,8 @@ export default function App() {
     status: 'INTRO_DIALOGUE',
     acorns: 0,
     goal: gameConfig.level.acornGoal,
-    selectedPlayerId: gameConfig.defaultPlayerId,
+    selectedPlayerId: initialPlayerId,
+    playerName: initialPlayerName,
     dialogueIndex: 0,
     flashDashReady: true,
     timeRemaining: gameConfig.level.durationSeconds,
@@ -40,13 +57,18 @@ export default function App() {
   const selectedPlayer =
     gameConfig.players.find((p) => p.id === state.selectedPlayerId) ??
     gameConfig.players[0];
+  const defaultNameForSelected =
+    identity?.defaultPlayerName ?? selectedPlayer.name;
 
   const dialogueLines =
     state.status === 'CUTSCENE' ? gameConfig.victory : gameConfig.intro;
   const showDialogue =
     state.status === 'INTRO_DIALOGUE' || state.status === 'CUTSCENE';
-  const dialogueLine =
+  const rawLine =
     dialogueLines[Math.min(state.dialogueIndex, dialogueLines.length - 1)];
+  const dialogueLine = rawLine
+    ? interpolateDialogue(rawLine, state.playerName)
+    : rawLine;
 
   return (
     <GameBoyShell
@@ -61,6 +83,19 @@ export default function App() {
             selectedId={state.selectedPlayerId}
             onSelect={(id) => engine?.selectPlayer(id)}
           />
+          {identity?.allowPlayerRename ? (
+            <div className="sm:col-span-2">
+              <PlayerNameInput
+                value={state.playerName}
+                defaultName={defaultNameForSelected}
+                label={identity.renamePromptLabel ?? 'Player name'}
+                help={identity.renamePromptHelp}
+                resetLabel={identity.renameResetLabel ?? 'Use default'}
+                onCommit={(name) => engine?.renamePlayer(name)}
+                onReset={() => engine?.resetPlayerName()}
+              />
+            </div>
+          ) : null}
         </div>
       }
     >
@@ -70,7 +105,7 @@ export default function App() {
           goal={state.goal}
           timeRemaining={state.timeRemaining}
           flashReady={state.flashDashReady}
-          playerName={selectedPlayer.name}
+          playerName={state.playerName}
         />
 
         <div className="relative">
