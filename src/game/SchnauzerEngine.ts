@@ -350,7 +350,7 @@ class SchnauzerScene extends Phaser.Scene {
     } else if (this.timeRemainingMs <= 0) {
       this.emit({
         type: 'MESSAGE',
-        payload: 'McNutt got away. Try again, schnauzer.',
+        payload: `${this.config.antagonist.name} got away. Try again.`,
       });
       this.emit({ type: 'STATE_CHANGE', payload: 'CUTSCENE' });
     }

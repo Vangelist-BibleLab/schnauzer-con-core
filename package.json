@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Schnauzer Con: Volume 1 - The Nut-Job Ruse. A vibrant 8-bit top-down browser game built with React, Vite, TypeScript, Tailwind, and Phaser.",
+  "description": "Schnauzer Con Core Engine — a reusable React + Vite + Phaser browser game engine. Volume-specific content lives in src/content/gameConfig.ts.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
