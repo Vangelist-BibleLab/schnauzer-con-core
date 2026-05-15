@@ -29,6 +29,13 @@ export interface SquirrelMinionConfig {
   acornsPerBoop: number;
   /** Display name for the minions. */
   label: string;
+  /**
+   * How long a booped minion stays visible (frozen in its boop pose) before
+   * it despawns and frees up a respawn slot. The engine uses the longer of
+   * this duration and the boop animation's natural length, so visual feedback
+   * is preserved even if art is replaced later. ~150-300ms feels right.
+   */
+  boopVisibleMs: number;
 }
 
 export interface AntagonistConfig {

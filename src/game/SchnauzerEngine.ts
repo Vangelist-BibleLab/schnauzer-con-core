@@ -57,6 +57,13 @@ interface PlayerEntity {
   sprite?: Phaser.GameObjects.Sprite;
 }
 
+// Minion lifecycle:
+//   'alive'    -> wandering, collidable
+//   'booped'   -> hit by Flash Dash; movement frozen, boop pose shown,
+//                 ignores further collisions, awaiting despawn
+//   'inactive' -> off the field; respawn slot is free, sprite hidden
+type SquirrelLifecycle = 'alive' | 'booped' | 'inactive';
+
 interface SquirrelEntity {
   id: number;
   x: number;
@@ -65,7 +72,9 @@ interface SquirrelEntity {
   vy: number;
   nextTurnAt: number;
   radius: number;
-  alive: boolean;
+  state: SquirrelLifecycle;
+  /** Scene time (ms) at which a `booped` minion transitions to `inactive`. */
+  despawnAt: number;
   sprite?: Phaser.GameObjects.Sprite;
 }
 
@@ -328,7 +337,8 @@ class SchnauzerScene extends Phaser.Scene {
 
     this.updatePlayer(time, delta);
     this.updateSquirrels(time, delta);
-    this.handleCollisions();
+    this.handleCollisions(time);
+    this.updateLifecycle(time);
     this.updateTimer(delta);
     this.maybeRespawn(time);
     this.syncSprites();
@@ -426,7 +436,7 @@ class SchnauzerScene extends Phaser.Scene {
     const { arenaWidth, arenaHeight } = this.config.level;
 
     for (const s of this.squirrels) {
-      if (!s.alive) continue;
+      if (s.state !== 'alive') continue;
 
       if (time >= s.nextTurnAt) {
         const angle = Math.random() * Math.PI * 2;
@@ -456,39 +466,67 @@ class SchnauzerScene extends Phaser.Scene {
   }
 
   // ----------------------------------------------------------------------
-  // Hitbox-based collision (unchanged from primitive-renderer days). The
-  // sprite is purely visual, so it cannot drift the collision results.
+  // Hitbox-based collision. Sprites are visual only, so they cannot drift
+  // the collision result. On a Flash-Dash hit we transition the minion
+  // into the `booped` state -- still on the field, ignored by further
+  // collisions, frozen in its boop pose -- and schedule its despawn.
   // ----------------------------------------------------------------------
-  private handleCollisions() {
+  private handleCollisions(time: number) {
     if (!this.player.flashing) return;
 
     for (const s of this.squirrels) {
-      if (!s.alive) continue;
+      if (s.state !== 'alive') continue;
       const dx = s.x - this.player.x;
       const dy = s.y - this.player.y;
       const r = s.radius + this.player.radius;
       if (dx * dx + dy * dy <= r * r) {
-        s.alive = false;
         this.acorns += this.config.squirrels.acornsPerBoop;
         this.emit({ type: 'ACORN', payload: this.acorns });
-        this.playBoop(s);
+        this.boopSquirrel(s, time);
       }
     }
   }
 
-  private playBoop(s: SquirrelEntity) {
-    if (!s.sprite) return;
-    const key = this.config.sprites.minion.boop;
-    if (this.anims.exists(key)) {
-      s.sprite.play(key, true);
+  // ----------------------------------------------------------------------
+  // Transition `alive` -> `booped`. Movement halts, the boop animation
+  // plays (or the player simply sees the boop pose if the anim is
+  // missing), and a despawn timestamp is scheduled.
+  //
+  // Despawn time = max(configured visible duration, natural anim length)
+  // so swapping in a longer reaction frame later doesn't get truncated by
+  // a hardcoded engine timer.
+  // ----------------------------------------------------------------------
+  private boopSquirrel(s: SquirrelEntity, time: number) {
+    s.state = 'booped';
+    s.vx = 0;
+    s.vy = 0;
+
+    const visibleMs = this.config.squirrels.boopVisibleMs;
+    let animMs = 0;
+    if (s.sprite) {
+      const key = this.config.sprites.minion.boop;
+      const anim = this.anims.exists(key) ? this.anims.get(key) : null;
+      if (anim) {
+        s.sprite.play(key, true);
+        const fps = anim.frameRate || 1;
+        animMs = (anim.frames.length / fps) * 1000;
+      }
     }
-    // Fade out after the boop reaction completes.
-    this.tweens.add({
-      targets: s.sprite,
-      alpha: 0,
-      duration: 280,
-      onComplete: () => s.sprite?.setVisible(false),
-    });
+    s.despawnAt = time + Math.max(visibleMs, animMs);
+  }
+
+  // ----------------------------------------------------------------------
+  // Lifecycle tick. Promote booped minions to inactive when their
+  // despawn timestamp lands. Hiding the sprite (rather than destroying
+  // it) keeps the spawn slot reusable without re-allocating textures.
+  // ----------------------------------------------------------------------
+  private updateLifecycle(time: number) {
+    for (const s of this.squirrels) {
+      if (s.state === 'booped' && time >= s.despawnAt) {
+        s.state = 'inactive';
+        s.sprite?.setVisible(false);
+      }
+    }
   }
 
   private updateTimer(deltaMs: number) {
@@ -500,8 +538,11 @@ class SchnauzerScene extends Phaser.Scene {
   }
 
   private maybeRespawn(time: number) {
-    const alive = this.squirrels.filter((s) => s.alive).length;
-    if (alive < this.config.squirrels.maxAlive && time >= this.nextSpawnAt) {
+    // `booped` minions still occupy a slot -- the spawner waits for them
+    // to fully despawn so the on-screen count never exceeds maxAlive and
+    // the boop reaction gets its full visible window.
+    const occupied = this.squirrels.filter((s) => s.state !== 'inactive').length;
+    if (occupied < this.config.squirrels.maxAlive && time >= this.nextSpawnAt) {
       this.spawnSquirrels(1);
       this.nextSpawnAt = time + 1800;
     }
@@ -528,7 +569,8 @@ class SchnauzerScene extends Phaser.Scene {
         vy: 0,
         nextTurnAt: 0,
         radius: 7,
-        alive: true,
+        state: 'alive',
+        despawnAt: 0,
       };
       this.squirrels.push(squirrel);
       this.attachSquirrelSprite(squirrel);
@@ -564,9 +606,12 @@ class SchnauzerScene extends Phaser.Scene {
     if (minionSheet) {
       for (const s of this.squirrels) {
         if (!s.sprite) continue;
-        if (!s.alive) continue;
+        if (s.state === 'inactive') continue;
         s.sprite.x = Math.round(s.x);
         s.sprite.y = Math.round(s.y) + (minionSheet.renderOffsetY ?? 0);
+        // Booped minions stay frozen in their boop pose -- don't overwrite
+        // the running boop animation with a walk-cycle frame.
+        if (s.state === 'booped') continue;
         const moving = Math.abs(s.vx) > 0.5 || Math.abs(s.vy) > 0.5;
         if (!moving) continue;
         const dir = pickDirection(s.vx, s.vy);

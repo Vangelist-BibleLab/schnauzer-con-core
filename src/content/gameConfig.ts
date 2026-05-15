@@ -123,6 +123,7 @@ export const gameConfig: SchnauzerGameConfig = {
     speed: 70,
     wanderInterval: 1.4,
     acornsPerBoop: 1,
+    boopVisibleMs: 240,
   },
 
   level: {
