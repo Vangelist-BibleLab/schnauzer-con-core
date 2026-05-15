@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------------------------------------------------------------------- */
+/* Game Boy 4-color palette enforcement. Anything outside this palette    */
+/* should be considered an error -- Lovable.dev should derive new shades  */
+/* by editing tailwind.config.js, not by inlining new colors here.        */
+/* ---------------------------------------------------------------------- */
+:root {
+  --gb-darkest: #0f380f;
+  --gb-dark: #306230;
+  --gb-light: #8bac0f;
+  --gb-lightest: #9bbc0f;
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--gb-darkest);
+  color: var(--gb-lightest);
+  font-family: 'Press Start 2P', 'Courier New', monospace;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+}
+
+.pixelated,
+.pixelated * {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.phaser-host canvas {
+  width: 100% !important;
+  height: auto !important;
+  display: block;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--gb-lightest);
+  outline-offset: 2px;
+}
