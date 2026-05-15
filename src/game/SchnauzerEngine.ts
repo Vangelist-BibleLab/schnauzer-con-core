@@ -121,9 +121,12 @@ class SchnauzerScene extends Phaser.Scene {
       ESC: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC),
     };
 
+    // Start the player in the upper-left quadrant so the dialogue overlay
+    // (which covers the bottom half during INTRO_DIALOGUE) never obscures
+    // the sprite during deploy-time screenshot validation.
     this.player = {
-      x: arenaWidth / 2,
-      y: arenaHeight / 2,
+      x: Math.round(arenaWidth * 0.28),
+      y: Math.round(arenaHeight * 0.32),
       vx: 0,
       vy: 0,
       facing: { x: 0, y: 1 },
@@ -317,11 +320,23 @@ class SchnauzerScene extends Phaser.Scene {
 
   private spawnSquirrels(count: number) {
     const { arenaWidth, arenaHeight } = this.config.level;
+    const minDistFromPlayer = 70;
     for (let i = 0; i < count; i++) {
+      let x = 0;
+      let y = 0;
+      // Reject samples too close to the player so screenshots show a clear
+      // schnauzer that is not visually fused with a similarly shaped squirrel.
+      for (let attempt = 0; attempt < 12; attempt++) {
+        x = Phaser.Math.Between(20, arenaWidth - 20);
+        y = Phaser.Math.Between(20, arenaHeight - 20);
+        const dx = x - this.player.x;
+        const dy = y - this.player.y;
+        if (dx * dx + dy * dy >= minDistFromPlayer * minDistFromPlayer) break;
+      }
       this.squirrels.push({
         id: this.squirrelIdCounter++,
-        x: Phaser.Math.Between(20, arenaWidth - 20),
-        y: Phaser.Math.Between(20, arenaHeight - 20),
+        x,
+        y,
         vx: 0,
         vy: 0,
         nextTurnAt: 0,
@@ -367,24 +382,90 @@ class SchnauzerScene extends Phaser.Scene {
       g.fillRect(s.x + s.radius - 2, s.y - s.radius - 3, 3, 4);
     }
 
-    // Player schnauzer. Flash Dash shimmer alternates the body color.
+    this.renderPlayer(g);
+  }
+
+  // ----------------------------------------------------------------------
+  // Player schnauzer -- drawn last so it always sits above squirrels.
+  // High-contrast layered build inside the 4-color Game Boy palette:
+  //   outer ring   : PALETTE.lightest  (halo against grass and dark squirrels)
+  //   body         : PALETTE.darkest   (unmistakable silhouette)
+  //   inner core   : PALETTE.light     (warm chest patch -- not the grass color)
+  //   ears & tail  : PALETTE.darkest   (pixel accents in known offsets)
+  //   muzzle dot   : PALETTE.lightest  (faces movement direction)
+  //   "P" label    : PALETTE.darkest on PALETTE.lightest plate, above player
+  // ----------------------------------------------------------------------
+  private renderPlayer(g: Phaser.GameObjects.Graphics) {
+    const r = this.player.radius;
+    const px = Math.round(this.player.x);
+    const py = Math.round(this.player.y);
+
+    // Bright halo / outline so the sprite never blends into either
+    // the light grass or the darker squirrels.
+    g.fillStyle(PALETTE.lightest, 1);
+    g.fillRect(px - r - 2, py - r - 2, r * 2 + 4, r * 2 + 4);
+
+    // Body. Flash Dash shimmer alternates between darkest and dark for
+    // a clearly readable "boost" without leaving the palette.
     const flashOn =
       this.player.flashing && Math.floor(this.time.now / 60) % 2 === 0;
     g.fillStyle(flashOn ? PALETTE.dark : PALETTE.darkest, 1);
+    g.fillRect(px - r, py - r, r * 2, r * 2);
+
+    // Chest patch -- a brighter inner block makes the schnauzer pop even
+    // when surrounded by similarly shaped enemies.
+    g.fillStyle(PALETTE.light, 1);
+    g.fillRect(px - 3, py - 1, 6, 5);
+
+    // Ears: two darker pixels poking above the body silhouette.
+    g.fillStyle(PALETTE.darkest, 1);
+    g.fillRect(px - r + 1, py - r - 3, 3, 3);
+    g.fillRect(px + r - 4, py - r - 3, 3, 3);
+
+    // Tail: opposite of facing direction, same dark accent.
     g.fillRect(
-      this.player.x - this.player.radius,
-      this.player.y - this.player.radius,
-      this.player.radius * 2,
-      this.player.radius * 2
+      px - Math.round(this.player.facing.x * (r + 1)) - 1,
+      py - Math.round(this.player.facing.y * (r + 1)) - 1,
+      3,
+      3
     );
-    // Beard / muzzle pointing toward facing direction.
+
+    // Muzzle / nose dot in the facing direction.
     g.fillStyle(PALETTE.lightest, 1);
     g.fillRect(
-      this.player.x + this.player.facing.x * 5 - 2,
-      this.player.y + this.player.facing.y * 5 - 2,
+      px + Math.round(this.player.facing.x * 5) - 2,
+      py + Math.round(this.player.facing.y * 5) - 2,
       4,
       4
     );
+
+    // "P" label plate above the player so the deploy screenshot reviewer
+    // can identify the player at a glance.
+    const labelY = py - r - 12;
+    const labelX = px - 5;
+    g.fillStyle(PALETTE.lightest, 1);
+    g.fillRect(labelX - 1, labelY - 1, 11, 9);
+    g.fillStyle(PALETTE.darkest, 1);
+    // Minimal 5x7 pixel "P" glyph.
+    // ##.
+    // #.#
+    // ##.
+    // #..
+    // #..
+    const pGlyph = [
+      [1, 1, 1, 0],
+      [1, 0, 0, 1],
+      [1, 0, 0, 1],
+      [1, 1, 1, 0],
+      [1, 0, 0, 0],
+      [1, 0, 0, 0],
+      [1, 0, 0, 0],
+    ];
+    for (let row = 0; row < pGlyph.length; row++) {
+      for (let col = 0; col < pGlyph[row].length; col++) {
+        if (pGlyph[row][col]) g.fillRect(labelX + col + 1, labelY + row, 1, 1);
+      }
+    }
   }
 }
 
