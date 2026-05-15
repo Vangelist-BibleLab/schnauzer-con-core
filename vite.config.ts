@@ -7,6 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Vite config for Schnauzer Con. Frontend-only; Phaser runs inside a React component.
 export default defineConfig({
+  base: './',
   plugins: [react()],
   resolve: {
     alias: {
