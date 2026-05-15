@@ -38,7 +38,24 @@ src/
   main.tsx                 # React entry point.
 public/
   schnauzer.svg            # Pixel-art favicon in the vibrant 8-bit palette.
+  sprites/                 # Sprite sheets + manifest docs (see sprites/README.md).
 ```
+
+## Sprites and animations
+
+Sprite art lives under `public/sprites/` and is loaded by Phaser at runtime
+using a **named-frame manifest** declared in `src/content/gameConfig.ts`
+(`sprites.sheets`). Each frame is an explicit `(x, y, w, h)` rectangle in
+the source sheet, so the engine works with labeled "design" sheets that
+have row headers, blank cells, and irregular spacing -- no uniform grid
+required.
+
+The engine itself reads the manifest, registers frames + animations on
+scene create, and picks `walk`/`idle`/`dash` (player) or
+`walk`/`stash`/`boop` (minion) per facing direction. Hitboxes remain the
+source of collision truth -- sprites are a visual layer that follows the
+existing position/radius math. See `public/sprites/README.md` for the
+first-pass frame layout and how to refine or swap art in future volumes.
 
 ## Architecture
 

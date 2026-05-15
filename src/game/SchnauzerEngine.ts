@@ -1,14 +1,25 @@
 // SchnauzerEngine.ts
-// Modular Phaser engine for Schnauzer Con: Volume 1 - The Nut-Job Ruse.
-// The engine knows nothing about specific copy or character names -- those
-// come from `gameConfig` so Lovable.dev can tweak content without touching
-// the game loop.
+// Modular Phaser engine for Schnauzer Con. The engine knows nothing about
+// specific copy or character names -- those come from `gameConfig`. It also
+// knows nothing about *which* sprite sheets to load: it consumes a sprite
+// manifest from config so future volumes can swap art without touching the
+// engine.
+//
+// Design notes:
+// - All collision uses the existing position/radius math (AABB on circle).
+//   Sprites are a visual layer; hitboxes are the source of truth.
+// - Sprite sheets are loaded via Phaser.Loader using explicit (x,y,w,h)
+//   rectangles from the manifest, not uniform grid frames. This lets us
+//   work with labeled "design" sheets that have blank cells and gaps.
+// - Animations are registered once on scene create() from the same manifest.
 
 import Phaser from 'phaser';
 import type {
+  DirectionalAnimationMap,
   GameStateName,
   RuntimeGameState,
   SchnauzerGameConfig,
+  SpriteSheetManifest,
 } from '@/content/types';
 
 export type EngineEvent =
@@ -21,14 +32,7 @@ export type EngineEvent =
 
 export type EngineListener = (event: EngineEvent) => void;
 
-// --------------------------------------------------------------------------
-// Vibrant 8-bit palette (numeric ints for Phaser graphics calls). The CSS
-// layer mirrors these as hex strings in tailwind.config.js / index.css.
-//   darkest : deep ink navy
-//   dark    : bright cyan      (used for NPC squirrels)
-//   light   : bubblegum pink   (player accent, grass shadow dots)
-//   lightest: sunny yellow     (canvas background, player halo)
-// --------------------------------------------------------------------------
+// Vibrant 8-bit palette (numeric ints for Phaser graphics calls).
 const PALETTE = {
   darkest: 0x1a1240,
   dark: 0x1fb8ff,
@@ -37,8 +41,8 @@ const PALETTE = {
 };
 
 // --------------------------------------------------------------------------
-// Internal entity shapes -- intentionally small (no Phaser sprites required).
-// Simple AABB collision against circle hitboxes keeps the engine snappy.
+// Entity records. Hitbox state (x/y/radius) is independent of any sprite --
+// the sprite is just a child renderer that follows the entity each frame.
 // --------------------------------------------------------------------------
 interface PlayerEntity {
   x: number;
@@ -50,6 +54,7 @@ interface PlayerEntity {
   flashUntil: number;
   flashCooldownUntil: number;
   radius: number;
+  sprite?: Phaser.GameObjects.Sprite;
 }
 
 interface SquirrelEntity {
@@ -61,6 +66,28 @@ interface SquirrelEntity {
   nextTurnAt: number;
   radius: number;
   alive: boolean;
+  sprite?: Phaser.GameObjects.Sprite;
+}
+
+type Direction4 = 'up' | 'down' | 'left' | 'right';
+
+// --------------------------------------------------------------------------
+// Pick the dominant compass direction from a facing vector. Diagonals fall
+// back to the larger absolute axis, so 8-way movement still maps cleanly
+// onto the 4-direction art set in the sheets.
+// --------------------------------------------------------------------------
+function pickDirection(fx: number, fy: number): Direction4 {
+  if (Math.abs(fx) > Math.abs(fy)) return fx >= 0 ? 'right' : 'left';
+  return fy >= 0 ? 'down' : 'up';
+}
+
+// --------------------------------------------------------------------------
+// Build the Phaser animation key for a sheet+animation pair. Keeping a
+// single canonical key here means callers don't need to remember the
+// format.
+// --------------------------------------------------------------------------
+function animKey(sheetKey: string, animName: string): string {
+  return `${sheetKey}:${animName}`;
 }
 
 // --------------------------------------------------------------------------
@@ -85,7 +112,8 @@ class SchnauzerScene extends Phaser.Scene {
     ESC: Phaser.Input.Keyboard.Key;
   };
 
-  private gfx!: Phaser.GameObjects.Graphics;
+  private bgGfx!: Phaser.GameObjects.Graphics;
+  private overlayGfx!: Phaser.GameObjects.Graphics;
 
   private acorns = 0;
   private goal = 25;
@@ -104,13 +132,35 @@ class SchnauzerScene extends Phaser.Scene {
     this.timeRemainingMs = this.config.level.durationSeconds * 1000;
   }
 
+  // ----------------------------------------------------------------------
+  // Asset preload. We load every sheet declared in the manifest by its
+  // texture key. Manifest URLs are relative to Vite's `base` (./), so
+  // they resolve correctly under static hosting subpaths.
+  // ----------------------------------------------------------------------
+  preload() {
+    const baseUrl = (import.meta.env?.BASE_URL as string | undefined) ?? '/';
+    const sheets = this.config.sprites.sheets;
+    for (const sheet of Object.values(sheets)) {
+      // Strip any leading slash so BASE_URL controls the final prefix.
+      const relative = sheet.url.replace(/^\//, '');
+      const url = `${baseUrl}${relative}`.replace(/\/+/g, '/');
+      this.load.image(sheet.key, url);
+    }
+  }
+
   create() {
     const { arenaWidth, arenaHeight } = this.config.level;
 
     this.cameras.main.setBackgroundColor(PALETTE.lightest);
     this.cameras.main.setBounds(0, 0, arenaWidth, arenaHeight);
 
-    this.gfx = this.add.graphics();
+    this.bgGfx = this.add.graphics();
+    this.bgGfx.setDepth(0);
+    this.overlayGfx = this.add.graphics();
+    this.overlayGfx.setDepth(20);
+
+    this.registerSheetFrames();
+    this.registerAnimations();
 
     // Keyboard input -- D-pad maps to arrows + WASD; A button maps to SPACE.
     this.cursors = this.input.keyboard!.createCursorKeys();
@@ -125,9 +175,8 @@ class SchnauzerScene extends Phaser.Scene {
       ESC: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC),
     };
 
-    // Start the player in the upper-left quadrant so the dialogue overlay
-    // (which covers the bottom half during INTRO_DIALOGUE) never obscures
-    // the sprite during deploy-time screenshot validation.
+    // Player starts in the upper-left quadrant so the dialogue overlay never
+    // obscures the sprite during screenshot validation.
     this.player = {
       x: Math.round(arenaWidth * 0.28),
       y: Math.round(arenaHeight * 0.32),
@@ -139,19 +188,141 @@ class SchnauzerScene extends Phaser.Scene {
       flashCooldownUntil: 0,
       radius: this.config.player.hitboxRadius,
     };
+    this.attachPlayerSprite();
 
     this.squirrels = [];
     this.spawnSquirrels(this.config.squirrels.maxAlive);
     this.nextSpawnAt = this.time.now + 2500;
+
+    this.renderBackground();
+  }
+
+  // ----------------------------------------------------------------------
+  // Register every named frame from every sheet as a sub-texture frame.
+  // After this runs, `add.sprite(x, y, sheetKey, frameName)` works as
+  // long as the texture and frame name exist in the manifest.
+  // ----------------------------------------------------------------------
+  private registerSheetFrames() {
+    for (const sheet of Object.values(this.config.sprites.sheets)) {
+      const texture = this.textures.get(sheet.key);
+      if (!texture || texture.key === '__MISSING') {
+        console.warn(`[SchnauzerEngine] Missing texture: ${sheet.key}`);
+        continue;
+      }
+      // Phaser keeps a default __BASE frame; we only add named sub-frames.
+      for (const [frameName, rect] of Object.entries(sheet.frames)) {
+        if (texture.has(frameName)) continue;
+        texture.add(frameName, 0, rect.x, rect.y, rect.w, rect.h);
+      }
+    }
+  }
+
+  // ----------------------------------------------------------------------
+  // Register every animation declared in the manifest under a deterministic
+  // `${sheetKey}:${animName}` key.
+  // ----------------------------------------------------------------------
+  private registerAnimations() {
+    for (const sheet of Object.values(this.config.sprites.sheets)) {
+      for (const [name, anim] of Object.entries(sheet.animations)) {
+        const key = animKey(sheet.key, name);
+        if (this.anims.exists(key)) continue;
+        const frames = anim.frames
+          .filter((f) => this.textures.get(sheet.key).has(f))
+          .map((f) => ({ key: sheet.key, frame: f }));
+        if (frames.length === 0) continue;
+        this.anims.create({
+          key,
+          frames,
+          frameRate: anim.frameRate ?? 6,
+          repeat: anim.repeat ?? -1,
+        });
+      }
+    }
+  }
+
+  // ----------------------------------------------------------------------
+  // Pick a sprite frame for the directional animation map. Falls back to
+  // the first frame of any defined direction if the chosen direction is
+  // missing. Returns null if the manifest has nothing for this character.
+  // ----------------------------------------------------------------------
+  private resolveAnim(
+    sheetKey: string,
+    dirMap: DirectionalAnimationMap,
+    dir: Direction4
+  ): string | null {
+    const candidates: Array<keyof DirectionalAnimationMap> = [
+      dir,
+      // 'left' and 'right' share side art, but try the explicit opposite
+      // before falling back to 'idle' so we don't silently swap directions.
+      dir === 'left' ? 'right' : dir === 'right' ? 'left' : dir,
+      'down',
+      'up',
+      'idle',
+    ];
+    for (const candidate of candidates) {
+      const animName = dirMap[candidate];
+      if (animName && this.anims.exists(animKey(sheetKey, animName))) {
+        return animKey(sheetKey, animName);
+      }
+    }
+    return null;
+  }
+
+  private playDirectional(
+    sprite: Phaser.GameObjects.Sprite,
+    sheetKey: string,
+    dirMap: DirectionalAnimationMap,
+    dir: Direction4,
+    flipForLeft: boolean
+  ) {
+    const key = this.resolveAnim(sheetKey, dirMap, dir);
+    if (!key) return;
+    if (sprite.anims.currentAnim?.key !== key) {
+      sprite.play(key, true);
+    }
+    if (flipForLeft) {
+      sprite.setFlipX(dir === 'left');
+    }
+  }
+
+  private attachPlayerSprite() {
+    const playerCfg = this.config.sprites.player;
+    const sheet = this.config.sprites.sheets[playerCfg.sheet];
+    if (!sheet) return;
+    if (!this.textures.exists(sheet.key)) return;
+    const sprite = this.add.sprite(this.player.x, this.player.y, sheet.key);
+    sprite.setDepth(10);
+    this.sizeSprite(sprite, sheet);
+    this.player.sprite = sprite;
+    this.playDirectional(sprite, sheet.key, playerCfg.idle, 'down', true);
+  }
+
+  private attachSquirrelSprite(s: SquirrelEntity) {
+    const minionCfg = this.config.sprites.minion;
+    const sheet = this.config.sprites.sheets[minionCfg.sheet];
+    if (!sheet) return;
+    if (!this.textures.exists(sheet.key)) return;
+    const sprite = this.add.sprite(s.x, s.y, sheet.key);
+    sprite.setDepth(9);
+    this.sizeSprite(sprite, sheet);
+    s.sprite = sprite;
+    this.playDirectional(sprite, sheet.key, minionCfg.walk, 'down', true);
+  }
+
+  private sizeSprite(
+    sprite: Phaser.GameObjects.Sprite,
+    sheet: SpriteSheetManifest
+  ) {
+    sprite.setDisplaySize(sheet.renderSize.width, sheet.renderSize.height);
+    sprite.setOrigin(0.5, 0.5);
   }
 
   update(time: number, delta: number) {
-    // Phaser may tick update() once before init/create finish wiring config.
     if (!this.config || !this.player) return;
 
-    // Only run gameplay logic while the state machine is in GAMEPLAY.
     if (this.getStatus() !== 'GAMEPLAY') {
-      this.render();
+      this.syncSprites();
+      this.renderOverlay();
       return;
     }
 
@@ -160,7 +331,8 @@ class SchnauzerScene extends Phaser.Scene {
     this.handleCollisions();
     this.updateTimer(delta);
     this.maybeRespawn(time);
-    this.render();
+    this.syncSprites();
+    this.renderOverlay();
 
     if (this.acorns >= this.goal) {
       this.emit({ type: 'MESSAGE', payload: 'Stash recovered!' });
@@ -176,7 +348,8 @@ class SchnauzerScene extends Phaser.Scene {
 
   // ----------------------------------------------------------------------
   // Player movement: 8-way D-pad style with normalized diagonals and a
-  // Flash Dash burst on Space / A.
+  // Flash Dash burst on Space / A. Animation choice is driven by the
+  // facing direction + movement state, never by sprite logic.
   // ----------------------------------------------------------------------
   private updatePlayer(time: number, deltaMs: number) {
     const dt = deltaMs / 1000;
@@ -204,7 +377,6 @@ class SchnauzerScene extends Phaser.Scene {
       this.player.vy = 0;
     }
 
-    // Trigger Flash Dash
     if (
       Phaser.Input.Keyboard.JustDown(this.keys.SPACE) &&
       time >= this.player.flashCooldownUntil
@@ -224,8 +396,6 @@ class SchnauzerScene extends Phaser.Scene {
       time >= this.player.flashCooldownUntil &&
       this.player.flashCooldownUntil !== 0
     ) {
-      // Emit a single FLASH_READY=true edge when cooldown elapses.
-      // Setting cooldownUntil back to 0 keeps this from re-firing every frame.
       this.player.flashCooldownUntil = 0;
       this.emit({ type: 'FLASH_READY', payload: true });
     }
@@ -233,7 +403,6 @@ class SchnauzerScene extends Phaser.Scene {
     this.player.x += this.player.vx * dt;
     this.player.y += this.player.vy * dt;
 
-    // Clamp to arena.
     const { arenaWidth, arenaHeight } = this.config.level;
     this.player.x = Phaser.Math.Clamp(
       this.player.x,
@@ -287,8 +456,8 @@ class SchnauzerScene extends Phaser.Scene {
   }
 
   // ----------------------------------------------------------------------
-  // Simple AABB / circle overlap. While Flash Dashing the player "boops"
-  // squirrels: they vanish and drop acorns from the stolen stash.
+  // Hitbox-based collision (unchanged from primitive-renderer days). The
+  // sprite is purely visual, so it cannot drift the collision results.
   // ----------------------------------------------------------------------
   private handleCollisions() {
     if (!this.player.flashing) return;
@@ -302,8 +471,26 @@ class SchnauzerScene extends Phaser.Scene {
         s.alive = false;
         this.acorns += this.config.squirrels.acornsPerBoop;
         this.emit({ type: 'ACORN', payload: this.acorns });
+        this.playBoop(s);
       }
     }
+  }
+
+  private playBoop(s: SquirrelEntity) {
+    const minionCfg = this.config.sprites.minion;
+    const sheet = this.config.sprites.sheets[minionCfg.sheet];
+    if (!s.sprite || !sheet) return;
+    const key = animKey(sheet.key, minionCfg.boop);
+    if (this.anims.exists(key)) {
+      s.sprite.play(key, true);
+    }
+    // Fade out after the boop reaction completes.
+    this.tweens.add({
+      targets: s.sprite,
+      alpha: 0,
+      duration: 280,
+      onComplete: () => s.sprite?.setVisible(false),
+    });
   }
 
   private updateTimer(deltaMs: number) {
@@ -328,8 +515,6 @@ class SchnauzerScene extends Phaser.Scene {
     for (let i = 0; i < count; i++) {
       let x = 0;
       let y = 0;
-      // Reject samples too close to the player so screenshots show a clear
-      // schnauzer that is not visually fused with a similarly shaped squirrel.
       for (let attempt = 0; attempt < 12; attempt++) {
         x = Phaser.Math.Between(20, arenaWidth - 20);
         y = Phaser.Math.Between(20, arenaHeight - 20);
@@ -337,7 +522,7 @@ class SchnauzerScene extends Phaser.Scene {
         const dy = y - this.player.y;
         if (dx * dx + dy * dy >= minDistFromPlayer * minDistFromPlayer) break;
       }
-      this.squirrels.push({
+      const squirrel: SquirrelEntity = {
         id: this.squirrelIdCounter++,
         x,
         y,
@@ -346,22 +531,62 @@ class SchnauzerScene extends Phaser.Scene {
         nextTurnAt: 0,
         radius: 7,
         alive: true,
-      });
+      };
+      this.squirrels.push(squirrel);
+      this.attachSquirrelSprite(squirrel);
     }
   }
 
   // ----------------------------------------------------------------------
-  // Rendering: pure Graphics primitives keep the game asset-free and
-  // guarantee the vibrant 4-token palette.
+  // Sprite sync: copy hitbox positions into the visual sprites and pick
+  // the animation that matches the entity's current state. No collision
+  // or movement logic happens here.
   // ----------------------------------------------------------------------
-  private render() {
-    const g = this.gfx;
+  private syncSprites() {
+    const playerCfg = this.config.sprites.player;
+    const playerSheet = this.config.sprites.sheets[playerCfg.sheet];
+    if (this.player.sprite && playerSheet) {
+      const sprite = this.player.sprite;
+      sprite.x = Math.round(this.player.x);
+      sprite.y = Math.round(this.player.y) + (playerSheet.renderOffsetY ?? 0);
+      const dir = pickDirection(this.player.facing.x, this.player.facing.y);
+      const moving =
+        Math.abs(this.player.vx) > 0.5 || Math.abs(this.player.vy) > 0.5;
+      const map = this.player.flashing
+        ? playerCfg.dash
+        : moving
+          ? playerCfg.walk
+          : playerCfg.idle;
+      this.playDirectional(sprite, playerSheet.key, map, dir, true);
+      sprite.setTint(this.player.flashing ? PALETTE.lightest : 0xffffff);
+    }
+
+    const minionCfg = this.config.sprites.minion;
+    const minionSheet = this.config.sprites.sheets[minionCfg.sheet];
+    if (minionSheet) {
+      for (const s of this.squirrels) {
+        if (!s.sprite) continue;
+        if (!s.alive) continue;
+        s.sprite.x = Math.round(s.x);
+        s.sprite.y = Math.round(s.y) + (minionSheet.renderOffsetY ?? 0);
+        const moving = Math.abs(s.vx) > 0.5 || Math.abs(s.vy) > 0.5;
+        if (!moving) continue;
+        const dir = pickDirection(s.vx, s.vy);
+        this.playDirectional(s.sprite, minionSheet.key, minionCfg.walk, dir, true);
+      }
+    }
+  }
+
+  // ----------------------------------------------------------------------
+  // Static lawn background. Rendered once on create() into bgGfx; the
+  // overlay graphics layer (halo, label) refreshes every frame.
+  // ----------------------------------------------------------------------
+  private renderBackground() {
+    const g = this.bgGfx;
     g.clear();
 
     const { arenaWidth, arenaHeight, tileSize } = this.config.level;
 
-    // Field background pattern: sunny yellow base + bubblegum-pink dots
-    // for an unmistakable 8-bit arcade lawn.
     g.fillStyle(PALETTE.lightest, 1);
     g.fillRect(0, 0, arenaWidth, arenaHeight);
     g.fillStyle(PALETTE.light, 1);
@@ -373,90 +598,36 @@ class SchnauzerScene extends Phaser.Scene {
       }
     }
 
-    // Arena border.
     g.lineStyle(2, PALETTE.darkest, 1);
     g.strokeRect(1, 1, arenaWidth - 2, arenaHeight - 2);
-
-    // Squirrels (mossy bark color so they pop against the lawn).
-    for (const s of this.squirrels) {
-      if (!s.alive) continue;
-      g.fillStyle(PALETTE.dark, 1);
-      g.fillRect(s.x - s.radius, s.y - s.radius, s.radius * 2, s.radius * 2);
-      // Tail tuft
-      g.fillStyle(PALETTE.darkest, 1);
-      g.fillRect(s.x + s.radius - 2, s.y - s.radius - 3, 3, 4);
-    }
-
-    this.renderPlayer(g);
   }
 
   // ----------------------------------------------------------------------
-  // Player schnauzer -- drawn last so it always sits above squirrels.
-  // High-contrast layered build inside the vibrant 4-color palette:
-  //   outer ring : PALETTE.light    (bubblegum-pink halo on yellow grass)
-  //   body       : PALETTE.darkest  (deep-navy silhouette)
-  //   chest      : PALETTE.lightest (sunny-yellow inner core)
-  //   ears, tail : PALETTE.darkest  (pixel accents in known offsets)
-  //   muzzle dot : PALETTE.lightest (faces movement direction)
-  //   "P" label  : navy glyph on yellow plate, sat above the player
+  // Overlay: Flash Dash halo + screenshot-friendly "P" plate. Drawn on top
+  // of sprites so the player remains identifiable in deploy validation.
   // ----------------------------------------------------------------------
-  private renderPlayer(g: Phaser.GameObjects.Graphics) {
+  private renderOverlay() {
+    const g = this.overlayGfx;
+    g.clear();
+
     const r = this.player.radius;
     const px = Math.round(this.player.x);
     const py = Math.round(this.player.y);
 
-    // Pink halo so the sprite never blends into the yellow grass or
-    // the cyan squirrels -- pink is unused by the field tiles or NPCs.
-    g.fillStyle(PALETTE.light, 1);
-    g.fillRect(px - r - 2, py - r - 2, r * 2 + 4, r * 2 + 4);
-
-    // Body. Flash Dash shimmer alternates between darkest (navy) and
-    // dark (cyan) for a readable "boost" without leaving the palette.
-    const flashOn =
-      this.player.flashing && Math.floor(this.time.now / 60) % 2 === 0;
-    g.fillStyle(flashOn ? PALETTE.dark : PALETTE.darkest, 1);
-    g.fillRect(px - r, py - r, r * 2, r * 2);
-
-    // Yellow chest patch keeps the schnauzer instantly identifiable
-    // even when squirrels (cyan) are adjacent.
-    g.fillStyle(PALETTE.lightest, 1);
-    g.fillRect(px - 3, py - 1, 6, 5);
-
-    // Ears: two navy pixels poking above the body silhouette.
-    g.fillStyle(PALETTE.darkest, 1);
-    g.fillRect(px - r + 1, py - r - 3, 3, 3);
-    g.fillRect(px + r - 4, py - r - 3, 3, 3);
-
-    // Tail: opposite of facing direction, same navy accent.
-    g.fillRect(
-      px - Math.round(this.player.facing.x * (r + 1)) - 1,
-      py - Math.round(this.player.facing.y * (r + 1)) - 1,
-      3,
-      3
-    );
-
-    // Muzzle / nose dot in the facing direction.
-    g.fillStyle(PALETTE.lightest, 1);
-    g.fillRect(
-      px + Math.round(this.player.facing.x * 5) - 2,
-      py + Math.round(this.player.facing.y * 5) - 2,
-      4,
-      4
-    );
+    // Flash Dash shimmer ring while dashing.
+    if (this.player.flashing) {
+      const flashOn = Math.floor(this.time.now / 60) % 2 === 0;
+      g.lineStyle(2, flashOn ? PALETTE.dark : PALETTE.light, 1);
+      g.strokeCircle(px, py, r + 3);
+    }
 
     // "P" label plate above the player so the deploy screenshot reviewer
     // can identify the player at a glance.
-    const labelY = py - r - 12;
+    const labelY = py - r - 18;
     const labelX = px - 5;
     g.fillStyle(PALETTE.lightest, 1);
     g.fillRect(labelX - 1, labelY - 1, 11, 9);
     g.fillStyle(PALETTE.darkest, 1);
-    // Minimal 5x7 pixel "P" glyph.
-    // ##.
-    // #.#
-    // ##.
-    // #..
-    // #..
     const pGlyph = [
       [1, 1, 1, 0],
       [1, 0, 0, 1],
@@ -518,8 +689,6 @@ export class SchnauzerEngine {
       },
       callbacks: {
         postBoot: (game) => {
-          // Add and start the scene *after* the Game is fully booted so
-          // init() receives our data on the very first call.
           game.scene.add('schnauzer', SchnauzerScene, true, sceneData);
           this.scene = game.scene.getScene('schnauzer') as SchnauzerScene;
         },
@@ -543,10 +712,6 @@ export class SchnauzerEngine {
     return { ...this.state };
   }
 
-  // ----------------------------------------------------------------------
-  // State machine -- INTRO_DIALOGUE -> GAMEPLAY -> CUTSCENE.
-  // Centralized here so the UI shell and Phaser scene stay in sync.
-  // ----------------------------------------------------------------------
   setState(next: GameStateName) {
     this.state.status = next;
     if (next === 'GAMEPLAY') {
@@ -567,7 +732,6 @@ export class SchnauzerEngine {
         this.setState('GAMEPLAY');
       } else {
         this.state.dialogueIndex = 0;
-        // Restart loop after the victory/defeat cutscene.
         this.resetRun();
         this.setState('INTRO_DIALOGUE');
       }
@@ -595,7 +759,6 @@ export class SchnauzerEngine {
   }
 
   private dispatch(event: EngineEvent) {
-    // Mirror engine events into the shared state object.
     switch (event.type) {
       case 'ACORN':
         this.state.acorns = event.payload;
